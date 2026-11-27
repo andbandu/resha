@@ -1,0 +1,13 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_S3_BASE_URL: ${NEXT_PUBLIC_S3_BASE_URL}
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: always
+    env_file:
+      - .env
+
+  # Later, you will add Django here with: build: ./backend
