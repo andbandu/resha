@@ -2,21 +2,13 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Category, Product, SizeOption } from "@/lib/types";
+import { formatPrice } from "@/lib/catalog";
+import type { Category, CategoryItem, Product, SizeOption } from "@/lib/types";
 import { useCart } from "./CartContext";
 import ProductCard from "./ProductCard";
 import { CloseIcon, FilterIcon, SearchIcon } from "./Icons";
 
-const ALL_CATEGORIES: ("All" | Category)[] = [
-  "All",
-  "Dresses",
-  "Skirts",
-  "Tops",
-  "Pants",
-  "Frocks",
-];
-
-const FABRIC_FILTERS: Product["fabricFamily"][] = [
+const STANDARD_FABRIC_ORDER = [
   "Soft Mulberry Silk",
   "Breathable Linen",
   "Combed Cotton",
@@ -27,7 +19,10 @@ const SIZE_FILTERS: SizeOption[] = ["XS", "S", "M", "L", "XL"];
 
 type SortMode = "featured" | "price-asc" | "price-desc" | "newest" | "rating";
 
-function normalizeCategoryParam(raw: string | null): "All" | Category {
+function normalizeCategoryParam(
+  raw: string | null,
+  availableCategories: string[]
+): "All" | Category {
   if (!raw) return "All";
   const lower = raw.trim().toLowerCase();
   if (lower === "dress" || lower === "dresses") return "Dresses";
@@ -35,25 +30,59 @@ function normalizeCategoryParam(raw: string | null): "All" | Category {
   if (lower === "top" || lower === "tops") return "Tops";
   if (lower === "pant" || lower === "pants") return "Pants";
   if (lower === "frock" || lower === "frocks") return "Frocks";
-  return "All";
+  const match = availableCategories.find((c) => c.toLowerCase() === lower);
+  return match ?? "All";
 }
 
-export default function ShopCatalog({ products }: { products: Product[] }) {
+export default function ShopCatalog({
+  products,
+  categories = [],
+}: {
+  products: Product[];
+  categories?: CategoryItem[];
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { wishlist } = useCart();
 
-  const categoryParam = normalizeCategoryParam(searchParams.get("category"));
+  const categoryPills = useMemo(() => {
+    const names = new Set<string>();
+    categories.forEach((c) => names.add(c.name));
+    products.forEach((p) => names.add(p.category));
+    return ["All", ...Array.from(names)];
+  }, [categories, products]);
+
+  const fabricFilters = useMemo(() => {
+    const present = new Set(products.map((p) => p.fabricFamily).filter(Boolean));
+    const ordered = STANDARD_FABRIC_ORDER.filter((f) => present.has(f));
+    present.forEach((f) => {
+      if (!ordered.includes(f)) ordered.push(f);
+    });
+    return ordered.length > 0 ? ordered : STANDARD_FABRIC_ORDER;
+  }, [products]);
+
+  const { minPriceFloor, maxPriceCeiling } = useMemo(() => {
+    if (products.length === 0) {
+      return { minPriceFloor: 60, maxPriceCeiling: 150 };
+    }
+    const prices = products.map((p) => p.price);
+    const minP = Math.min(60, Math.floor(Math.min(...prices) / 10) * 10);
+    const maxP = Math.max(150, Math.ceil(Math.max(...prices) / 10) * 10);
+    return { minPriceFloor: minP, maxPriceCeiling: maxP };
+  }, [products]);
+
+  const categoryParam = normalizeCategoryParam(
+    searchParams.get("category"),
+    categoryPills.filter((c) => c !== "All")
+  );
   const collectionParam = searchParams.get("collection") || "";
   const queryParam = searchParams.get("q") || "";
   const savedOnlyParam = searchParams.get("saved") === "1";
 
   const [localSearch, setLocalSearch] = useState(queryParam);
   const [selectedSize, setSelectedSize] = useState<SizeOption | "">("");
-  const [selectedFabric, setSelectedFabric] = useState<
-    Product["fabricFamily"] | ""
-  >("");
-  const [maxPrice, setMaxPrice] = useState<number>(150);
+  const [selectedFabric, setSelectedFabric] = useState<string>("");
+  const [maxPrice, setMaxPrice] = useState<number>(maxPriceCeiling);
   const [sortBy, setSortBy] = useState<SortMode>("featured");
   const [filtersExpanded, setFiltersExpanded] = useState(false);
 
@@ -74,7 +103,7 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
     setLocalSearch("");
     setSelectedSize("");
     setSelectedFabric("");
-    setMaxPrice(150);
+    setMaxPrice(maxPriceCeiling);
     setSortBy("featured");
     router.replace("/shop", { scroll: false });
   }
@@ -102,6 +131,7 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
         const haystack = [
           p.name,
           p.subtitle,
+          p.sku,
           p.category,
           p.collection,
           p.fabric,
@@ -151,7 +181,7 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
     savedOnlyParam ||
     Boolean(selectedSize) ||
     Boolean(selectedFabric) ||
-    maxPrice < 150;
+    maxPrice < maxPriceCeiling;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
@@ -184,9 +214,9 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
         </div>
       </div>
 
-      {/* Exact 5 Category Pills */}
+      {/* Category Pills */}
       <div className="mt-6 flex flex-wrap items-center gap-2">
-        {ALL_CATEGORIES.map((cat) => {
+        {categoryPills.map((cat) => {
           const active = !savedOnlyParam && categoryParam === cat;
           return (
             <button
@@ -329,7 +359,7 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
               Fabric
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {FABRIC_FILTERS.map((fam) => (
+              {fabricFilters.map((fam) => (
                 <button
                   key={fam}
                   type="button"
@@ -352,12 +382,14 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
           <div>
             <div className="mb-2.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.16em] text-[#9E5E6A]">
               <span>Max Price</span>
-              <span className="font-mono text-[#0E0E10]">Rs. {maxPrice}</span>
+              <span className="font-mono text-[#0E0E10]">
+                {formatPrice(maxPrice)}
+              </span>
             </div>
             <input
               type="range"
-              min={60}
-              max={150}
+              min={minPriceFloor}
+              max={maxPriceCeiling}
               step={5}
               value={maxPrice}
               onChange={(e) => setMaxPrice(Number(e.target.value))}
@@ -365,8 +397,8 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
               className="w-full accent-[#9E5E6A]"
             />
             <div className="mt-1 flex justify-between font-mono text-[11px] text-[#63636B]">
-              <span>Rs. 60</span>
-              <span>Rs. 150</span>
+              <span>{formatPrice(minPriceFloor)}</span>
+              <span>{formatPrice(maxPriceCeiling)}</span>
             </div>
           </div>
         </div>

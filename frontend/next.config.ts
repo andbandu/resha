@@ -18,6 +18,27 @@ const nextConfig: NextConfig = {
         pathname: "/**",
         search: "",
       },
+      {
+        protocol: "http",
+        hostname: "127.0.0.1",
+        port: "8000",
+        pathname: "/media/**",
+        search: "",
+      },
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "8000",
+        pathname: "/media/**",
+        search: "",
+      },
+      {
+        protocol: "http",
+        hostname: "backend",
+        port: "8000",
+        pathname: "/media/**",
+        search: "",
+      },
     ],
   },
   turbopack: {

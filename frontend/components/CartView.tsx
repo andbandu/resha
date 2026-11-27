@@ -3,11 +3,8 @@
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import {
-  FREE_SHIPPING_THRESHOLD,
-  PRODUCTS,
-  formatPrice,
-} from "@/lib/catalog";
+import { formatPrice } from "@/lib/catalog";
+import type { Product } from "@/lib/types";
 import { useCart } from "./CartContext";
 import ProductCard from "./ProductCard";
 import {
@@ -21,12 +18,18 @@ import {
   TrashIcon,
 } from "./Icons";
 
-export default function CartView() {
+export default function CartView({
+  recommendedPool = [],
+}: {
+  recommendedPool?: Product[];
+}) {
   const {
     items,
     itemCount,
     subtotal,
     appliedPromo,
+    availablePromos,
+    storeConfig,
     discountAmount,
     isHydrated,
     updateQuantity,
@@ -36,6 +39,7 @@ export default function CartView() {
   } = useCart();
 
   const [promoInput, setPromoInput] = useState("");
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [promoFeedback, setPromoFeedback] = useState<{
     ok: boolean;
     message: string;
@@ -43,8 +47,8 @@ export default function CartView() {
 
   const recommended = useMemo(() => {
     const inCartIds = new Set(items.map((i) => i.productId));
-    return PRODUCTS.filter((p) => !inCartIds.has(p.id)).slice(0, 4);
-  }, [items]);
+    return recommendedPool.filter((p) => !inCartIds.has(p.id)).slice(0, 4);
+  }, [items, recommendedPool]);
 
   if (!isHydrated) {
     return (
@@ -58,22 +62,46 @@ export default function CartView() {
     );
   }
 
+  const freeShippingThreshold = storeConfig.freeShippingThreshold || 120;
+  const standardShippingCost = storeConfig.standardShippingCost ?? 18;
+  const taxRatePercent = storeConfig.taxRatePercent ?? 8;
+
   const discountedSubtotal = Math.max(0, subtotal - discountAmount);
   const shippingCost =
-    subtotal === 0 ? 0 : subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : 18;
-  const estimatedTax = Math.round(discountedSubtotal * 0.08);
+    subtotal === 0
+      ? 0
+      : subtotal >= freeShippingThreshold
+      ? 0
+      : standardShippingCost;
+  const estimatedTax =
+    Math.round(discountedSubtotal * (taxRatePercent / 100) * 100) / 100;
   const orderTotal = discountedSubtotal + shippingCost + estimatedTax;
-  const remainingFree = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
+  const remainingFree = Math.max(0, freeShippingThreshold - subtotal);
   const shippingPct = Math.min(
     100,
-    Math.round((subtotal / FREE_SHIPPING_THRESHOLD) * 100)
+    Math.round((subtotal / freeShippingThreshold) * 100)
   );
 
-  function handleApplyPromo(e: React.FormEvent) {
+  async function handleApplyPromo(e: React.FormEvent) {
     e.preventDefault();
-    const res = applyPromoCode(promoInput);
-    setPromoFeedback(res);
-    if (res.ok) setPromoInput("");
+    setIsApplyingPromo(true);
+    try {
+      const res = await applyPromoCode(promoInput);
+      setPromoFeedback(res);
+      if (res.ok) setPromoInput("");
+    } finally {
+      setIsApplyingPromo(false);
+    }
+  }
+
+  async function handleQuickPromo(code: string) {
+    setIsApplyingPromo(true);
+    try {
+      const res = await applyPromoCode(code);
+      setPromoFeedback(res);
+    } finally {
+      setIsApplyingPromo(false);
+    }
   }
 
   return (
@@ -161,13 +189,15 @@ export default function CartView() {
                     className="block w-24 shrink-0 sm:w-28"
                   >
                     <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7]">
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        fill
-                        sizes="(max-width: 640px) 96px, 112px"
-                        className="object-cover"
-                      />
+                      {item.image && (
+                        <Image
+                          src={item.image}
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 96px, 112px"
+                          className="object-cover"
+                        />
+                      )}
                     </div>
                   </Link>
 
@@ -289,16 +319,18 @@ export default function CartView() {
                     <input
                       id="promo-code"
                       type="text"
+                      disabled={isApplyingPromo}
                       value={promoInput}
                       onChange={(e) => setPromoInput(e.target.value)}
                       placeholder="e.g. RESHA10"
-                      className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3 py-2 font-mono text-xs uppercase text-[#0E0E10] placeholder:normal-case placeholder:font-sans placeholder:text-[#63636B] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
+                      className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3 py-2 font-mono text-xs uppercase text-[#0E0E10] placeholder:normal-case placeholder:font-sans placeholder:text-[#63636B] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none disabled:opacity-60"
                     />
                     <button
                       type="submit"
-                      className="border border-[#0E0E10] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#0E0E10] transition-colors hover:border-[#9E5E6A] hover:bg-[#9E5E6A] hover:text-[#FFFFFF]"
+                      disabled={isApplyingPromo}
+                      className="border border-[#0E0E10] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[#0E0E10] transition-colors hover:border-[#9E5E6A] hover:bg-[#9E5E6A] hover:text-[#FFFFFF] disabled:opacity-60"
                     >
-                      Apply
+                      {isApplyingPromo ? "..." : "Apply"}
                     </button>
                   </form>
                 )}
@@ -313,20 +345,18 @@ export default function CartView() {
                   </p>
                 )}
 
-                {!appliedPromo && (
+                {!appliedPromo && availablePromos.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-[#63636B]">
                     <span>Available:</span>
-                    {["RESHA10", "CASUAL20"].map((code) => (
+                    {availablePromos.map((promo) => (
                       <button
-                        key={code}
+                        key={promo.code}
                         type="button"
-                        onClick={() => {
-                          const res = applyPromoCode(code);
-                          setPromoFeedback(res);
-                        }}
-                        className="border border-[#EEDDE2] bg-[#FAF5F6] px-2 py-0.5 font-mono text-[10px] text-[#7D4652] hover:border-[#9E5E6A]"
+                        disabled={isApplyingPromo}
+                        onClick={() => handleQuickPromo(promo.code)}
+                        className="border border-[#EEDDE2] bg-[#FAF5F6] px-2 py-0.5 font-mono text-[10px] text-[#7D4652] hover:border-[#9E5E6A] disabled:opacity-60"
                       >
-                        {code}
+                        {promo.code}
                       </button>
                     ))}
                   </div>
@@ -363,7 +393,7 @@ export default function CartView() {
                 </div>
 
                 <div className="flex justify-between text-[#63636B]">
-                  <span>Estimated Tax (8%)</span>
+                  <span>Estimated Tax ({taxRatePercent}%)</span>
                   <span className="font-mono text-[#0E0E10]">
                     {formatPrice(estimatedTax)}
                   </span>

@@ -1,7 +1,9 @@
 import React, { Suspense } from "react";
 import type { Metadata } from "next";
-import { PRODUCTS } from "@/lib/catalog";
+import { fetchCategories, fetchProducts } from "@/lib/catalog";
+import type { CategoryItem, Product } from "@/lib/types";
 import ShopCatalog from "@/components/ShopCatalog";
+import ApiErrorState from "@/components/ApiErrorState";
 
 export const metadata: Metadata = {
   title: "Shop Women's Wear",
@@ -27,10 +29,40 @@ function ShopLoadingSkeleton() {
   );
 }
 
+async function ShopCatalogLoader() {
+  let products: Product[] = [];
+  let categories: CategoryItem[] = [];
+  let loadFailed = false;
+
+  try {
+    const [fetchedProducts, fetchedCategories] = await Promise.all([
+      fetchProducts(),
+      fetchCategories(),
+    ]);
+    products = fetchedProducts;
+    categories = fetchedCategories;
+  } catch {
+    loadFailed = true;
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="px-4 py-10 sm:px-6 lg:px-8">
+        <ApiErrorState
+          title="Unable to Load Catalog"
+          description="We could not reach the Resha Django backend API to load our catalog. Please ensure the backend server is running and try again."
+        />
+      </div>
+    );
+  }
+
+  return <ShopCatalog products={products} categories={categories} />;
+}
+
 export default function ShopPage() {
   return (
     <Suspense fallback={<ShopLoadingSkeleton />}>
-      <ShopCatalog products={PRODUCTS} />
+      <ShopCatalogLoader />
     </Suspense>
   );
 }

@@ -3,8 +3,8 @@
 import React, { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { formatPrice } from "@/lib/catalog";
 import { useCart } from "./CartContext";
-import { FREE_SHIPPING_THRESHOLD, formatPrice } from "@/lib/catalog";
 import {
   ArrowRightIcon,
   BagIcon,
@@ -20,6 +20,7 @@ export default function CartDrawer() {
     itemCount,
     subtotal,
     discountAmount,
+    storeConfig,
     isCartOpen,
     closeCart,
     updateQuantity,
@@ -37,13 +38,11 @@ export default function CartDrawer() {
 
   if (!isCartOpen) return null;
 
-  const remainingForFreeShipping = Math.max(
-    0,
-    FREE_SHIPPING_THRESHOLD - subtotal
-  );
+  const threshold = storeConfig.freeShippingThreshold || 120;
+  const remainingForFreeShipping = Math.max(0, threshold - subtotal);
   const shippingProgress = Math.min(
     100,
-    Math.round((subtotal / FREE_SHIPPING_THRESHOLD) * 100)
+    Math.round((subtotal / threshold) * 100)
   );
   const estimatedTotal = Math.max(0, subtotal - discountAmount);
 
@@ -143,13 +142,15 @@ export default function CartDrawer() {
                     className="block h-28 w-22 shrink-0 overflow-hidden bg-[#F5F5F7]"
                   >
                     <div className="relative h-full w-full">
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        fill
-                        sizes="88px"
-                        className="object-cover"
-                      />
+                      {item.image && (
+                        <Image
+                          src={item.image}
+                          alt={item.name}
+                          fill
+                          sizes="88px"
+                          className="object-cover"
+                        />
+                      )}
                     </div>
                   </Link>
                   <div className="flex flex-1 flex-col justify-between">

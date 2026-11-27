@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { FREE_SHIPPING_THRESHOLD, formatPrice } from "@/lib/catalog";
+import { ApiRequestError, createOrder, formatPrice } from "@/lib/catalog";
 import type { OrderRecord } from "@/lib/types";
 import { useCart } from "./CartContext";
 import { ArrowRightIcon, BagIcon, CheckIcon, ShieldIcon } from "./Icons";
@@ -68,24 +68,12 @@ function formatExpiry(value: string): string {
   return digits;
 }
 
-function createOrderMetadata() {
-  const suffix = String((Date.now() % 9000) + 1000);
-  const placedAt = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date());
-  return {
-    orderNumber: `RSH-2026-${suffix}`,
-    placedAt,
-  };
-}
-
 export default function CheckoutView() {
   const {
     items,
     subtotal,
     appliedPromo,
+    storeConfig,
     discountAmount,
     isHydrated,
     clearCart,
@@ -95,6 +83,7 @@ export default function CheckoutView() {
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>(
     {}
   );
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState<OrderRecord | null>(
     null
@@ -122,7 +111,10 @@ export default function CheckoutView() {
             </span>
             <div>
               <p className="text-[11px] font-medium uppercase tracking-[0.2em]">
-                Order Confirmed
+                Order{" "}
+                {confirmedOrder.status
+                  ? confirmedOrder.status
+                  : "Confirmed"}
               </p>
               <p className="font-mono text-sm text-[#0E0E10]">
                 {confirmedOrder.orderNumber}
@@ -134,8 +126,8 @@ export default function CheckoutView() {
             Thank you, {confirmedOrder.shippingName.split(" ")[0]}.
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-[#63636B]">
-            Your order is being prepared for dispatch. A confirmation summary
-            has been prepared for{" "}
+            Your order has been registered in our studio and is being prepared
+            for dispatch. A confirmation summary has been prepared for{" "}
             <span className="font-medium text-[#0E0E10]">
               {confirmedOrder.email}
             </span>
@@ -180,13 +172,15 @@ export default function CheckoutView() {
               {confirmedOrder.items.map((item) => (
                 <li key={item.key} className="flex items-center gap-4 py-3.5">
                   <div className="relative h-20 w-16 shrink-0 overflow-hidden bg-[#F5F5F7]">
-                    <Image
-                      src={item.image}
-                      alt={item.name}
-                      fill
-                      sizes="64px"
-                      className="object-cover"
-                    />
+                    {item.image && (
+                      <Image
+                        src={item.image}
+                        alt={item.name}
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    )}
                   </div>
                   <div className="flex-1">
                     <p className="text-base font-medium text-[#0E0E10]">
@@ -213,7 +207,12 @@ export default function CheckoutView() {
             </div>
             {confirmedOrder.discount > 0 && (
               <div className="flex justify-between text-[#1F5C42]">
-                <span>Privilege Credit</span>
+                <span>
+                  Privilege Credit
+                  {confirmedOrder.promoCode
+                    ? ` (${confirmedOrder.promoCode})`
+                    : ""}
+                </span>
                 <span className="font-mono">
                   -{formatPrice(confirmedOrder.discount)}
                 </span>
@@ -234,7 +233,11 @@ export default function CheckoutView() {
               </span>
             </div>
             <div className="flex justify-between border-t border-[#EEDDE2] pt-3 text-base font-medium text-[#0E0E10]">
-              <span>Total Paid</span>
+              <span>
+                {confirmedOrder.paymentMethod === "cod"
+                  ? "Total Due on Delivery"
+                  : "Total Paid"}
+              </span>
               <span className="font-mono text-lg">
                 {formatPrice(confirmedOrder.total)}
               </span>
@@ -286,25 +289,28 @@ export default function CheckoutView() {
     );
   }
 
-  const standardShipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : 18;
+  const freeShippingThreshold = storeConfig.freeShippingThreshold || 120;
+  const standardShippingCost = storeConfig.standardShippingCost ?? 18;
+  const expressShippingCost = storeConfig.expressShippingCost ?? 32;
+  const taxRatePercent = storeConfig.taxRatePercent ?? 8;
+
+  const standardShipping =
+    subtotal >= freeShippingThreshold ? 0 : standardShippingCost;
   const deliveryCostMap: Record<DeliveryMethod, number> = {
     standard: standardShipping,
-    express: 32,
+    express: expressShippingCost,
     studio: 0,
-  };
-  const deliveryLabelMap: Record<DeliveryMethod, string> = {
-    standard: "Standard Tracked Dispatch (4–6 Business Days)",
-    express: "Express Air Courier (2–3 Business Days)",
-    studio: "Studio Pickup (Ready in 4 Hours)",
   };
 
   const shippingCost = deliveryCostMap[form.deliveryMethod];
   const discountedSubtotal = Math.max(0, subtotal - discountAmount);
-  const tax = Math.round(discountedSubtotal * 0.08);
+  const tax =
+    Math.round(discountedSubtotal * (taxRatePercent / 100) * 100) / 100;
   const total = discountedSubtotal + shippingCost + tax;
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (submitError) setSubmitError(null);
     if (errors[key]) {
       setErrors((prev) => {
         const copy = { ...prev };
@@ -350,47 +356,61 @@ export default function CheckoutView() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  function handlePlaceOrder(e: React.FormEvent) {
+  async function handlePlaceOrder(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
 
     setIsSubmitting(true);
-    const snapshotItems = [...items];
-    const { orderNumber: orderCode, placedAt: nowLabel } =
-      createOrderMetadata();
+    setSubmitError(null);
 
-    const fullAddress = [
-      form.address.trim(),
-      form.apartment.trim(),
-      `${form.city.trim()}${form.state.trim() ? `, ${form.state.trim()}` : ""} ${form.postalCode.trim()}`,
-      form.country,
-    ]
-      .filter(Boolean)
-      .join(", ");
+    try {
+      const orderRecord = await createOrder({
+        email: form.email.trim(),
+        newsletter: form.newsletter,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phone: form.phone.trim(),
+        address: form.address.trim(),
+        apartment: form.apartment.trim(),
+        city: form.city.trim(),
+        state: form.state.trim(),
+        postalCode: form.postalCode.trim(),
+        country: form.country,
+        deliveryMethod: form.deliveryMethod,
+        giftWrap: form.giftWrap,
+        giftNote: form.giftNote.trim(),
+        paymentMethod: form.paymentMethod,
+        promoCode: appliedPromo?.code ?? "",
+        items: items.map((item) => ({
+          productId: item.productId,
+          slug: item.slug,
+          sku: item.sku,
+          colorName: item.colorName,
+          size: item.size,
+          quantity: item.quantity,
+        })),
+      });
 
-    const record: OrderRecord = {
-      orderNumber: orderCode,
-      placedAt: nowLabel,
-      email: form.email.trim(),
-      shippingName: `${form.firstName.trim()} ${form.lastName.trim()}`,
-      shippingAddress: fullAddress,
-      shippingMethodLabel: deliveryLabelMap[form.deliveryMethod],
-      shippingCost,
-      subtotal,
-      discount: discountAmount,
-      tax,
-      total,
-      giftWrap: form.giftWrap,
-      giftNote: form.giftNote.trim() || undefined,
-      items: snapshotItems,
-    };
-
-    window.setTimeout(() => {
-      setConfirmedOrder(record);
+      setConfirmedOrder(orderRecord);
       clearCart();
-      setIsSubmitting(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
-    }, 350);
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        setSubmitError(err.message);
+        if (Object.keys(err.fieldErrors).length > 0) {
+          setErrors((prev) => ({
+            ...prev,
+            ...(err.fieldErrors as Partial<Record<keyof FormState, string>>),
+          }));
+        }
+      } else {
+        setSubmitError(
+          "Could not submit your order right now. Please verify the backend service is running and try again."
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -409,6 +429,15 @@ export default function CheckoutView() {
           <span>Encrypted Order Dispatch</span>
         </div>
       </div>
+
+      {submitError && (
+        <div
+          role="alert"
+          className="mb-8 border border-[#9F2D2D]/40 bg-[#9F2D2D]/5 px-5 py-4 text-sm text-[#9F2D2D]"
+        >
+          {submitError}
+        </div>
+      )}
 
       <form
         onSubmit={handlePlaceOrder}
@@ -663,7 +692,7 @@ export default function CheckoutView() {
                     id: "express",
                     title: "Express Air Courier",
                     eta: "2–3 business days · Priority customs",
-                    price: 32,
+                    price: expressShippingCost,
                   },
                   {
                     id: "studio",
@@ -737,7 +766,7 @@ export default function CheckoutView() {
                 04 · Payment Details
               </h2>
               <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#9E5E6A]">
-                Frontend Demo Checkout
+                Studio Order Processing
               </span>
             </div>
 
@@ -899,13 +928,15 @@ export default function CheckoutView() {
               {items.map((item) => (
                 <li key={item.key} className="flex items-center gap-4 py-3.5">
                   <div className="relative h-20 w-16 shrink-0 overflow-hidden bg-[#F5F5F7]">
-                    <Image
-                      src={item.image}
-                      alt={item.name}
-                      fill
-                      sizes="64px"
-                      className="object-cover"
-                    />
+                    {item.image && (
+                      <Image
+                        src={item.image}
+                        alt={item.name}
+                        fill
+                        sizes="64px"
+                        className="object-cover"
+                      />
+                    )}
                     <span className="absolute right-0 top-0 bg-[#9E5E6A] px-1.5 py-0.5 font-mono text-[10px] text-[#FFFFFF]">
                       ×{item.quantity}
                     </span>
@@ -949,7 +980,7 @@ export default function CheckoutView() {
                 </span>
               </div>
               <div className="flex justify-between text-[#63636B]">
-                <span>Estimated Tax (8%)</span>
+                <span>Estimated Tax ({taxRatePercent}%)</span>
                 <span className="font-mono text-[#0E0E10]">
                   {formatPrice(tax)}
                 </span>

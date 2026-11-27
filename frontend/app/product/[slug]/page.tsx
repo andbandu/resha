@@ -1,31 +1,45 @@
 import React, { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  PRODUCTS,
-  getProductBySlug,
-  getRelatedProducts,
-} from "@/lib/catalog";
+import { fetchProductBySlug, fetchProducts } from "@/lib/catalog";
+import type { ProductDetail } from "@/lib/types";
 import ProductDetailView from "@/components/ProductDetailView";
+import ApiErrorState from "@/components/ApiErrorState";
 
-export function generateStaticParams() {
-  return PRODUCTS.map((product) => ({
-    slug: product.slug,
-  }));
+export async function generateStaticParams() {
+  try {
+    const products = await fetchProducts();
+    if (products.length > 0) {
+      return products.map((product) => ({
+        slug: product.slug,
+      }));
+    }
+  } catch {
+    // Backend may be unavailable during standalone image build; stream on demand at runtime.
+  }
+  return [{ slug: "__placeholder__" }];
 }
 
 export async function generateMetadata(
   props: PageProps<"/product/[slug]">
 ): Promise<Metadata> {
   const { slug } = await props.params;
-  const product = getProductBySlug(slug);
-  if (!product) {
+  if (slug === "__placeholder__") {
     return { title: "Garment Not Found" };
   }
-  return {
-    title: product.name,
-    description: product.subtitle,
-  };
+
+  try {
+    const product = await fetchProductBySlug(slug);
+    if (!product) {
+      return { title: "Garment Not Found" };
+    }
+    return {
+      title: product.name,
+      description: product.subtitle,
+    };
+  } catch {
+    return { title: "Garment Details" };
+  }
 }
 
 async function ProductResolver({
@@ -34,14 +48,41 @@ async function ProductResolver({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
+  if (slug === "__placeholder__") {
+    notFound();
+  }
+
+  let product: ProductDetail | null = null;
+  let loadFailed = false;
+
+  try {
+    product = await fetchProductBySlug(slug);
+  } catch {
+    loadFailed = true;
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="px-4 py-12 sm:px-6 lg:px-8">
+        <ApiErrorState
+          title="Unable to Load Garment"
+          description="We could not load this garment from the Django backend API right now. Please try again."
+        />
+      </div>
+    );
+  }
 
   if (!product) {
     notFound();
   }
 
-  const related = getRelatedProducts(product, 4);
-  return <ProductDetailView product={product} relatedProducts={related} />;
+  return (
+    <ProductDetailView
+      key={product.id}
+      product={product}
+      relatedProducts={product.relatedProducts ?? []}
+    />
+  );
 }
 
 function ProductSkeleton() {

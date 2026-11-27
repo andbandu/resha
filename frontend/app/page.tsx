@@ -1,12 +1,168 @@
-import React from "react";
+import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { CATEGORIES, getFeaturedProducts, getS3ImageUrl } from "@/lib/catalog";
+import {
+  DEFAULT_STORE_CONFIG,
+  fetchCategories,
+  fetchProducts,
+  fetchStoreConfig,
+  formatPrice,
+} from "@/lib/catalog";
+import type { CategoryItem, Product, StoreConfig } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
+import ApiErrorState from "@/components/ApiErrorState";
 import { ArrowRightIcon, ShieldIcon } from "@/components/Icons";
 
-export default function HomePage() {
-  const featuredProducts = getFeaturedProducts();
+function pickEditorialProduct(
+  products: Product[],
+  preferredSlug: string,
+  fallbackCategory?: string,
+  excludeSlugs: string[] = []
+): Product | undefined {
+  const bySlug = products.find((p) => p.slug === preferredSlug);
+  if (bySlug) return bySlug;
+
+  if (fallbackCategory) {
+    const byCategory = products.find(
+      (p) =>
+        p.category.toLowerCase() === fallbackCategory.toLowerCase() &&
+        !excludeSlugs.includes(p.slug)
+    );
+    if (byCategory) return byCategory;
+  }
+
+  return products.find((p) => !excludeSlugs.includes(p.slug));
+}
+
+function getProductCardImage(product?: Product, preferredIndex = 0): string {
+  if (!product) return "";
+  return (
+    product.images[preferredIndex]?.src ||
+    product.images[0]?.src ||
+    product.colors[0]?.image ||
+    ""
+  );
+}
+
+function getCategoryImage(
+  categoryName: string,
+  categories: CategoryItem[],
+  products: Product[]
+): string {
+  const cat = categories.find(
+    (c) => c.name.toLowerCase() === categoryName.toLowerCase()
+  );
+  if (cat?.image) return cat.image;
+  const match = products.find(
+    (p) => p.category.toLowerCase() === categoryName.toLowerCase()
+  );
+  return getProductCardImage(match);
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="flex flex-col bg-[#FFFFFF]">
+      <section className="w-full border-b border-[#EEDDE2] bg-[#0E0E10] text-[#FFFFFF]">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 lg:grid-cols-12">
+          <div className="flex flex-col justify-between px-6 py-14 sm:px-10 sm:py-20 lg:col-span-5 lg:py-24">
+            <div className="space-y-6">
+              <div className="h-7 w-48 animate-pulse bg-[#262124]" />
+              <div className="h-24 w-4/5 animate-pulse bg-[#262124]" />
+              <div className="h-16 w-full animate-pulse bg-[#1D181B]" />
+              <div className="flex gap-3 pt-2">
+                <div className="h-12 w-40 animate-pulse bg-[#FFFFFF]/20" />
+                <div className="h-12 w-36 animate-pulse bg-[#262124]" />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-[#262124] lg:col-span-7">
+            <div className="aspect-[3/4] w-full animate-pulse bg-[#1A1517] lg:min-h-[600px]" />
+            <div className="aspect-[3/4] w-full animate-pulse bg-[#1A1517] lg:min-h-[600px]" />
+          </div>
+        </div>
+      </section>
+      <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
+        <div className="h-10 w-72 animate-pulse bg-[#F5F5F7]" />
+        <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <div
+              key={n}
+              className="aspect-[3/4] w-full animate-pulse bg-[#F5F5F7]"
+            />
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+async function HomeStorefrontContent() {
+  let categories: CategoryItem[] = [];
+  let products: Product[] = [];
+  let storeConfig: StoreConfig = DEFAULT_STORE_CONFIG;
+  let loadFailed = false;
+
+  try {
+    const [fetchedCategories, fetchedProducts, fetchedConfig] =
+      await Promise.all([
+        fetchCategories(),
+        fetchProducts(),
+        fetchStoreConfig().catch(() => DEFAULT_STORE_CONFIG),
+      ]);
+    categories = fetchedCategories;
+    products = fetchedProducts;
+    storeConfig = fetchedConfig;
+  } catch {
+    loadFailed = true;
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="px-4 py-12 sm:px-6 lg:px-8">
+        <ApiErrorState
+          title="Unable to Load Resha Storefront"
+          description="We could not fetch the latest collection from the Django backend API. Verify the backend server is running and refresh."
+          showHomeLink={false}
+        />
+      </div>
+    );
+  }
+
+  const featuredProducts = products.filter((p) => p.featured);
+  const signatureEdit =
+    featuredProducts.length > 0 ? featuredProducts : products.slice(0, 6);
+
+  const heroPrimary = pickEditorialProduct(products, "amani-dress", "Dresses");
+  const heroSecondary = pickEditorialProduct(
+    products,
+    "livia-dress",
+    "Frocks",
+    heroPrimary ? [heroPrimary.slug] : []
+  );
+
+  const separatePrimary = pickEditorialProduct(products, "brielle-top", "Tops");
+  const separateSecondary = pickEditorialProduct(
+    products,
+    "eve-top",
+    "Tops",
+    separatePrimary ? [separatePrimary.slug] : []
+  );
+
+  const showcaseItems = [
+    pickEditorialProduct(products, "azalea-dress", "Frocks"),
+    pickEditorialProduct(products, "noel-skirt", "Skirts"),
+    pickEditorialProduct(products, "esme-top", "Tops"),
+  ].filter((item): item is Product => Boolean(item));
+
+  const showcaseCategories = ["Frocks", "Skirts", "Tops"].map((catName) => ({
+    name: catName,
+    image: getCategoryImage(catName, categories, products),
+  }));
+
+  const heroPrimaryImg = getProductCardImage(heroPrimary);
+  const heroSecondaryImg = getProductCardImage(heroSecondary);
+  const separatePrimaryImg = getProductCardImage(separatePrimary, 2);
+  const separateSecondaryImg = getProductCardImage(separateSecondary);
 
   return (
     <div className="flex flex-col bg-[#FFFFFF]">
@@ -55,12 +211,12 @@ export default function HomePage() {
 
             <div className="mt-12 border-t border-[#262124] pt-6">
               <p className="mb-3 text-[10px] uppercase tracking-[0.22em] text-[#9B858C]">
-                Five Curated Categories
+                {categories.length} Curated Categories
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#E4DCE0]">
-                {CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <Link
-                    key={c.name}
+                    key={c.slug}
                     href={`/shop?category=${encodeURIComponent(c.name)}`}
                     className="transition-colors hover:text-[#E8B4BE]"
                   >
@@ -73,57 +229,75 @@ export default function HomePage() {
 
           {/* Right Dual Studio Lookbook Panels */}
           <div className="grid grid-cols-2 gap-px bg-[#262124] lg:col-span-7">
-            <Link href="/product/amani-dress" className="group block w-full">
-              <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7] lg:aspect-auto lg:min-h-[600px]">
-                <Image
-                  src={getS3ImageUrl("AMANI DRESS image 1.webp")}
-                  alt="Amani Dusty Rose Pocket Dress"
-                  fill
-                  preload
-                  quality={90}
-                  sizes="(max-width: 1024px) 50vw, 375px"
-                  className="object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10]/55 via-transparent to-transparent" />
-                <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between text-[#FFFFFF]">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#F2CFD6]">
-                      01 · Dresses
-                    </p>
-                    <p className="mt-0.5 text-sm font-medium">
-                      Amani Rose Pocket Dress
-                    </p>
+            {heroPrimary && (
+              <Link
+                href={`/product/${heroPrimary.slug}`}
+                className="group block w-full"
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7] lg:aspect-auto lg:min-h-[600px]">
+                  {heroPrimaryImg && (
+                    <Image
+                      src={heroPrimaryImg}
+                      alt={heroPrimary.name}
+                      fill
+                      preload
+                      quality={90}
+                      sizes="(max-width: 1024px) 50vw, 375px"
+                      className="object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10]/55 via-transparent to-transparent" />
+                  <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between text-[#FFFFFF]">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-[#F2CFD6]">
+                        01 · {heroPrimary.category}
+                      </p>
+                      <p className="mt-0.5 text-sm font-medium">
+                        {heroPrimary.name}
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs text-[#F2CFD6]">
+                      {formatPrice(heroPrimary.price)}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs text-[#F2CFD6]">Rs. 116</span>
                 </div>
-              </div>
-            </Link>
+              </Link>
+            )}
 
-            <Link href="/product/livia-dress" className="group block w-full">
-              <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7] lg:aspect-auto lg:min-h-[600px]">
-                <Image
-                  src={getS3ImageUrl("LIVIA DRESS image 1.webp")}
-                  alt="Livia Blush Tiered Frock"
-                  fill
-                  preload
-                  quality={90}
-                  sizes="(max-width: 1024px) 50vw, 375px"
-                  className="object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10]/55 via-transparent to-transparent" />
-                <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between text-[#FFFFFF]">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#F2CFD6]">
-                      02 · Frocks
-                    </p>
-                    <p className="mt-0.5 text-sm font-medium">
-                      Livia Blush Tiered Frock
-                    </p>
+            {heroSecondary && (
+              <Link
+                href={`/product/${heroSecondary.slug}`}
+                className="group block w-full"
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7] lg:aspect-auto lg:min-h-[600px]">
+                  {heroSecondaryImg && (
+                    <Image
+                      src={heroSecondaryImg}
+                      alt={heroSecondary.name}
+                      fill
+                      preload
+                      quality={90}
+                      sizes="(max-width: 1024px) 50vw, 375px"
+                      className="object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10]/55 via-transparent to-transparent" />
+                  <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between text-[#FFFFFF]">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-[#F2CFD6]">
+                        02 · {heroSecondary.category}
+                      </p>
+                      <p className="mt-0.5 text-sm font-medium">
+                        {heroSecondary.name}
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs text-[#F2CFD6]">
+                      {formatPrice(heroSecondary.price)}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs text-[#F2CFD6]">Rs. 96</span>
                 </div>
-              </div>
-            </Link>
+              </Link>
+            )}
           </div>
         </div>
       </section>
@@ -149,22 +323,24 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {CATEGORIES.map((category, idx) => (
+          {categories.map((category, idx) => (
             <Link
-              key={category.name}
+              key={category.slug}
               href={`/shop?category=${encodeURIComponent(category.name)}`}
               className={`group flex flex-col border border-[#EEDDE2] bg-[#FFFFFF] transition-colors hover:border-[#9E5E6A] ${
                 idx === 4 ? "col-span-2 sm:col-span-1" : ""
               }`}
             >
               <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7]">
-                <Image
-                  src={category.image}
-                  alt={category.name}
-                  fill
-                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
-                  className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-                />
+                {category.image && (
+                  <Image
+                    src={category.image}
+                    alt={category.name}
+                    fill
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                    className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                  />
+                )}
               </div>
               <div className="p-4">
                 <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[#9E5E6A]">
@@ -204,7 +380,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:gap-x-6 lg:grid-cols-3">
-            {featuredProducts.map((product) => (
+            {signatureEdit.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
@@ -215,28 +391,42 @@ export default function HomePage() {
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:px-8">
         <div className="grid grid-cols-1 items-center gap-12 lg:grid-cols-12">
           <div className="grid grid-cols-2 gap-4 lg:col-span-6">
-            <Link href="/product/brielle-top" className="group block">
-              <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7]">
-                <Image
-                  src={getS3ImageUrl("BRIELLE TOP image 3.webp")}
-                  alt="Brielle Terracotta Peplum Top"
-                  fill
-                  sizes="(max-width: 1024px) 50vw, 310px"
-                  className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-                />
-              </div>
-            </Link>
-            <Link href="/product/eve-top" className="group mt-6 block sm:mt-8">
-              <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7]">
-                <Image
-                  src={getS3ImageUrl("EVE TOP image 1.webp")}
-                  alt="Eve Tie-Front Vest Top"
-                  fill
-                  sizes="(max-width: 1024px) 50vw, 310px"
-                  className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-                />
-              </div>
-            </Link>
+            {separatePrimary && (
+              <Link
+                href={`/product/${separatePrimary.slug}`}
+                className="group block"
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7]">
+                  {separatePrimaryImg && (
+                    <Image
+                      src={separatePrimaryImg}
+                      alt={separatePrimary.name}
+                      fill
+                      sizes="(max-width: 1024px) 50vw, 310px"
+                      className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+                    />
+                  )}
+                </div>
+              </Link>
+            )}
+            {separateSecondary && (
+              <Link
+                href={`/product/${separateSecondary.slug}`}
+                className="group mt-6 block sm:mt-8"
+              >
+                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#F5F5F7]">
+                  {separateSecondaryImg && (
+                    <Image
+                      src={separateSecondaryImg}
+                      alt={separateSecondary.name}
+                      fill
+                      sizes="(max-width: 1024px) 50vw, 310px"
+                      className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+                    />
+                  )}
+                </div>
+              </Link>
+            )}
           </div>
 
           <div className="space-y-6 lg:col-span-6 lg:pl-8">
@@ -326,27 +516,20 @@ export default function HomePage() {
               </p>
 
               <div className="space-y-2.5 border-t border-[#EEDDE2] pt-5 text-sm">
-                <Link
-                  href="/product/azalea-dress"
-                  className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
-                >
-                  <span>Frocks · Azalea Smocked Sundress</span>
-                  <span className="font-mono text-xs text-[#9E5E6A]">Rs. 98</span>
-                </Link>
-                <Link
-                  href="/product/noel-skirt"
-                  className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
-                >
-                  <span>Skirts · Noel Taupe Column Skirt</span>
-                  <span className="font-mono text-xs text-[#9E5E6A]">Rs. 98</span>
-                </Link>
-                <Link
-                  href="/product/esme-top"
-                  className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
-                >
-                  <span>Tops · Esme Botanical Check Top</span>
-                  <span className="font-mono text-xs text-[#9E5E6A]">Rs. 74</span>
-                </Link>
+                {showcaseItems.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={`/product/${item.slug}`}
+                    className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
+                  >
+                    <span>
+                      {item.category} · {item.name}
+                    </span>
+                    <span className="font-mono text-xs text-[#9E5E6A]">
+                      {formatPrice(item.price)}
+                    </span>
+                  </Link>
+                ))}
               </div>
 
               <div className="pt-1">
@@ -361,48 +544,28 @@ export default function HomePage() {
             </div>
 
             <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:col-span-7">
-              <Link href="/shop?category=Frocks" className="group block">
-                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#FFFFFF]">
-                  <Image
-                    src={getS3ImageUrl("BIANCA DRESS image 1.webp")}
-                    alt="Bianca Ivory Eyelet Frock"
-                    fill
-                    sizes="(max-width: 1024px) 33vw, 220px"
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                  <span className="absolute bottom-2.5 left-2.5 border border-[#EEDDE2] bg-[#FFFFFF]/95 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#7D4652]">
-                    Frocks
-                  </span>
-                </div>
-              </Link>
-              <Link href="/shop?category=Skirts" className="group block">
-                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#FFFFFF]">
-                  <Image
-                    src={getS3ImageUrl("KIVI SKIRT image 1.webp")}
-                    alt="Kivi Ivory Gathered Skirt"
-                    fill
-                    sizes="(max-width: 1024px) 33vw, 220px"
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                  <span className="absolute bottom-2.5 left-2.5 border border-[#EEDDE2] bg-[#FFFFFF]/95 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#7D4652]">
-                    Skirts
-                  </span>
-                </div>
-              </Link>
-              <Link href="/shop?category=Tops" className="group block">
-                <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#FFFFFF]">
-                  <Image
-                    src={getS3ImageUrl("KATHY TOP image 1.webp")}
-                    alt="Kathy Pastel Motif Top"
-                    fill
-                    sizes="(max-width: 1024px) 33vw, 220px"
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                  <span className="absolute bottom-2.5 left-2.5 border border-[#EEDDE2] bg-[#FFFFFF]/95 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#7D4652]">
-                    Tops
-                  </span>
-                </div>
-              </Link>
+              {showcaseCategories.map((cat) => (
+                <Link
+                  key={cat.name}
+                  href={`/shop?category=${encodeURIComponent(cat.name)}`}
+                  className="group block"
+                >
+                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#FFFFFF]">
+                    {cat.image && (
+                      <Image
+                        src={cat.image}
+                        alt={cat.name}
+                        fill
+                        sizes="(max-width: 1024px) 33vw, 220px"
+                        className="object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                    )}
+                    <span className="absolute bottom-2.5 left-2.5 border border-[#EEDDE2] bg-[#FFFFFF]/95 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#7D4652]">
+                      {cat.name}
+                    </span>
+                  </div>
+                </Link>
+              ))}
             </div>
           </div>
         </div>
@@ -430,8 +593,9 @@ export default function HomePage() {
                 Complimentary Express Shipping
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-[#63636B]">
-                Free tracked courier dispatch worldwide on orders above Rs. 120 in
-                our signature garment packaging.
+                Free tracked courier dispatch worldwide on orders above{" "}
+                {formatPrice(storeConfig.freeShippingThreshold)} in our
+                signature garment packaging.
               </p>
             </div>
           </div>
@@ -450,5 +614,13 @@ export default function HomePage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<HomeSkeleton />}>
+      <HomeStorefrontContent />
+    </Suspense>
   );
 }

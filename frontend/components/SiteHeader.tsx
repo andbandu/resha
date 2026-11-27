@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "./CartContext";
@@ -12,7 +12,7 @@ import {
   SearchIcon,
 } from "./Icons";
 
-const PRIMARY_NAV = [
+const FALLBACK_NAV = [
   { label: "Shop All", href: "/shop" },
   { label: "Dresses", href: "/shop?category=Dresses" },
   { label: "Skirts", href: "/shop?category=Skirts" },
@@ -24,13 +24,24 @@ const PRIMARY_NAV = [
 export default function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const { itemCount, wishlist, openCart } = useCart();
+  const { itemCount, wishlist, storeConfig, categories, openCart } = useCart();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
   const isCheckout = pathname === "/checkout";
+
+  const primaryNav = useMemo(() => {
+    if (categories.length === 0) return FALLBACK_NAV;
+    return [
+      { label: "Shop All", href: "/shop" },
+      ...categories.map((c) => ({
+        label: c.name,
+        href: `/shop?category=${encodeURIComponent(c.name)}`,
+      })),
+    ];
+  }, [categories]);
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,16 +58,20 @@ export default function SiteHeader() {
     <header className="sticky top-0 z-40 w-full border-b border-[#EEDDE2] bg-[#FFFFFF]/95 backdrop-blur-md">
       {/* Announcement Strip */}
       <div className="bg-[#0E0E10] px-4 py-2 text-center text-[11px] uppercase tracking-[0.2em] text-[#FFFFFF]">
-        <span>
-          Complimentary Express Shipping Over Rs. 120 · New Season Casualwear ·
-          Code:{" "}
-        </span>
-        <span className="font-mono font-medium text-[#E8B4BE]">RESHA10</span>
+        <span>{storeConfig.announcementText}</span>
+        {storeConfig.featuredPromoCode && (
+          <>
+            <span> · Code: </span>
+            <span className="font-mono font-medium text-[#E8B4BE]">
+              {storeConfig.featuredPromoCode}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Main Nav Bar */}
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Left: Mobile toggle or Desktop 5-Category Nav */}
+        {/* Left: Mobile toggle or Desktop Category Nav */}
         <div className="flex items-center gap-5">
           {!isCheckout && (
             <button
@@ -74,7 +89,7 @@ export default function SiteHeader() {
               aria-label="Primary navigation"
               className="hidden lg:flex items-center gap-5"
             >
-              {PRIMARY_NAV.map((item) => (
+              {primaryNav.map((item) => (
                 <Link
                   key={item.label}
                   href={item.href}
@@ -101,7 +116,7 @@ export default function SiteHeader() {
           aria-label="Resha Contemporary Womenswear Home"
         >
           <span className="font-serif text-2xl sm:text-[28px] font-normal tracking-[0.32em] text-[#0E0E10] transition-colors group-hover:text-[#9E5E6A]">
-            RESHA
+            {storeConfig.storeName || "RESHA"}
           </span>
           <span className="hidden sm:block text-[8px] font-medium uppercase tracking-[0.36em] text-[#9E5E6A] -mt-0.5">
             Contemporary Womenswear
@@ -201,7 +216,7 @@ export default function SiteHeader() {
           <div className="relative z-10 flex h-full w-80 max-w-[85vw] flex-col bg-[#FFFFFF] border-r border-[#EEDDE2] p-6">
             <div className="flex items-center justify-between border-b border-[#EEDDE2] pb-4">
               <span className="font-serif text-2xl tracking-[0.3em] text-[#0E0E10]">
-                RESHA
+                {storeConfig.storeName || "RESHA"}
               </span>
               <button
                 type="button"
@@ -213,7 +228,7 @@ export default function SiteHeader() {
               </button>
             </div>
             <nav className="mt-6 flex flex-col gap-3">
-              {PRIMARY_NAV.map((item) => (
+              {primaryNav.map((item) => (
                 <Link
                   key={item.label}
                   href={item.href}

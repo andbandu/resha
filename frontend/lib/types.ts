@@ -1,6 +1,29 @@
-export type Category = "Dresses" | "Skirts" | "Tops" | "Pants" | "Frocks";
+export type Category = "Dresses" | "Skirts" | "Tops" | "Pants" | "Frocks" | (string & {});
 
 export type SizeOption = "XS" | "S" | "M" | "L" | "XL";
+
+export type FabricFamily =
+  | "Soft Mulberry Silk"
+  | "Breathable Linen"
+  | "Combed Cotton"
+  | "Soft Rib Knit"
+  | (string & {});
+
+export interface CategoryItem {
+  name: Category;
+  slug: string;
+  tagline: string;
+  description: string;
+  image: string;
+  productCount: number;
+}
+
+export interface CollectionItem {
+  name: string;
+  slug: string;
+  description: string;
+  productCount: number;
+}
 
 export interface ProductColor {
   name: string;
@@ -40,14 +63,10 @@ export interface Product {
   category: Category;
   collection: string;
   price: number;
-  compareAtPrice?: number;
-  badge?: string;
+  compareAtPrice?: number | null;
+  badge?: string | null;
   fabric: string;
-  fabricFamily:
-    | "Soft Mulberry Silk"
-    | "Breathable Linen"
-    | "Combed Cotton"
-    | "Soft Rib Knit";
+  fabricFamily: FabricFamily;
   gsm: string;
   origin: string;
   description: string;
@@ -62,6 +81,10 @@ export interface Product {
   reviews: ProductReview[];
   featured?: boolean;
   isNew?: boolean;
+}
+
+export interface ProductDetail extends Product {
+  relatedProducts?: Product[];
 }
 
 export interface CartItem {
@@ -84,11 +107,32 @@ export interface PromoCode {
   description: string;
   type: "percent" | "fixed";
   value: number;
+  minOrderAmount?: number;
+}
+
+export interface PromoValidationResponse {
+  ok: boolean;
+  message: string;
+  promo: PromoCode | null;
+  discountAmount: number;
+}
+
+export interface StoreConfig {
+  storeName: string;
+  freeShippingThreshold: number;
+  standardShippingCost: number;
+  expressShippingCost: number;
+  taxRatePercent: number;
+  announcementText: string;
+  featuredPromoCode: string;
 }
 
 export interface OrderRecord {
   orderNumber: string;
   placedAt: string;
+  status?: string;
+  paymentMethod?: "card" | "cod";
+  paymentStatus?: string;
   email: string;
   shippingName: string;
   shippingAddress: string;
@@ -99,6 +143,52 @@ export interface OrderRecord {
   tax: number;
   total: number;
   giftWrap: boolean;
-  giftNote?: string;
+  giftNote?: string | null;
+  promoCode?: string;
+  trackingNumber?: string;
   items: CartItem[];
+}
+
+export interface CheckoutOrderPayload {
+  email: string;
+  newsletter: boolean;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  address: string;
+  apartment: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  deliveryMethod: "standard" | "express" | "studio";
+  giftWrap: boolean;
+  giftNote: string;
+  paymentMethod: "card" | "cod";
+  promoCode: string;
+  items: {
+    productId: string;
+    slug: string;
+    sku: string;
+    colorName: string;
+    size: SizeOption;
+    quantity: number;
+  }[];
+}
+
+export interface ReviewCreatePayload {
+  author: string;
+  location: string;
+  rating: number;
+  sizePurchased: SizeOption;
+  fitFeedback: "Runs Small" | "True to Size" | "Runs Large";
+  comment: string;
+}
+
+export interface NewsletterResponse {
+  ok: boolean;
+  created: boolean;
+  email: string;
+  promoCode: string;
+  message: string;
 }

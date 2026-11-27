@@ -18,14 +18,18 @@ export default function ProductCard({ product }: ProductCardProps) {
   const [justAddedSize, setJustAddedSize] = useState<SizeOption | null>(null);
 
   const activeColor = product.colors[selectedColorIdx] ?? product.colors[0];
-  const displayImage = activeColor?.image || product.images[0]?.src;
+  const displayImage = activeColor?.image || product.images[0]?.src || "";
   const saved = isWishlisted(product.id);
 
   function handleQuickAdd(e: React.MouseEvent, size: SizeOption) {
     e.preventDefault();
     e.stopPropagation();
-    if (!activeColor) return;
-    addItem(product, activeColor, size, 1, true);
+    const colorToAdd = activeColor ?? {
+      name: "Studio Shade",
+      hex: "#0E0E10",
+      image: displayImage,
+    };
+    addItem(product, colorToAdd, size, 1, true);
     setJustAddedSize(size);
     window.setTimeout(() => setJustAddedSize(null), 1400);
   }
@@ -39,13 +43,15 @@ export default function ProductCard({ product }: ProductCardProps) {
           className="relative block h-full w-full"
           aria-label={product.name}
         >
-          <Image
-            src={displayImage}
-            alt={product.name}
-            fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 400px"
-            className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
-          />
+          {displayImage && (
+            <Image
+              src={displayImage}
+              alt={product.name}
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 400px"
+              className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+            />
+          )}
         </Link>
 
         {/* Top-left modern rose-tinted badge */}
