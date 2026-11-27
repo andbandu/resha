@@ -94,7 +94,7 @@ export default function HomePage() {
                       Amani Rose Pocket Dress
                     </p>
                   </div>
-                  <span className="font-mono text-xs text-[#F2CFD6]">$116</span>
+                  <span className="font-mono text-xs text-[#F2CFD6]">Rs. 116</span>
                 </div>
               </div>
             </Link>
@@ -120,7 +120,7 @@ export default function HomePage() {
                       Livia Blush Tiered Frock
                     </p>
                   </div>
-                  <span className="font-mono text-xs text-[#F2CFD6]">$96</span>
+                  <span className="font-mono text-xs text-[#F2CFD6]">Rs. 96</span>
                 </div>
               </div>
             </Link>
@@ -331,21 +331,21 @@ export default function HomePage() {
                   className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
                 >
                   <span>Frocks · Azalea Smocked Sundress</span>
-                  <span className="font-mono text-xs text-[#9E5E6A]">$98</span>
+                  <span className="font-mono text-xs text-[#9E5E6A]">Rs. 98</span>
                 </Link>
                 <Link
                   href="/product/noel-skirt"
                   className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
                 >
                   <span>Skirts · Noel Taupe Column Skirt</span>
-                  <span className="font-mono text-xs text-[#9E5E6A]">$98</span>
+                  <span className="font-mono text-xs text-[#9E5E6A]">Rs. 98</span>
                 </Link>
                 <Link
                   href="/product/esme-top"
                   className="flex items-center justify-between py-1 text-[#0E0E10] hover:text-[#9E5E6A]"
                 >
                   <span>Tops · Esme Botanical Check Top</span>
-                  <span className="font-mono text-xs text-[#9E5E6A]">$74</span>
+                  <span className="font-mono text-xs text-[#9E5E6A]">Rs. 74</span>
                 </Link>
               </div>
 
@@ -430,7 +430,7 @@ export default function HomePage() {
                 Complimentary Express Shipping
               </h3>
               <p className="mt-1.5 text-xs leading-relaxed text-[#63636B]">
-                Free tracked courier dispatch worldwide on orders above $120 in
+                Free tracked courier dispatch worldwide on orders above Rs. 120 in
                 our signature garment packaging.
               </p>
             </div>

@@ -1,0 +1,398 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static log %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/dashboard.css' %}">
+{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+{% block bodyclass %}{{ block.super }} dashboard resha-dashboard-page{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div id="content-main" class="resha-dash">
+  {% if resha_metrics %}
+  <!-- Hero Welcome & Action Header -->
+  <section class="resha-hero">
+    <div class="resha-hero-copy">
+      <div class="resha-hero-badges">
+        <span class="resha-live-dot"><i></i> Storefront Connected</span>
+        <span class="resha-env-chip">
+          {% if resha_metrics.s3_enabled %}AWS S3 · resha-images{% else %}Local Media + S3 Catalog{% endif %}
+        </span>
+        <span class="resha-env-chip">Free Express ≥ {{ resha_metrics.free_shipping_threshold_display }}</span>
+      </div>
+      <h1>Storefront Overview</h1>
+      <p>Welcome back, <strong>{% firstof user.get_short_name user.get_username %}</strong>. Manage garments, size inventory, customer orders, privileges, and studio settings.</p>
+    </div>
+
+    <div class="resha-hero-actions">
+      <a href="{% url 'admin:products_product_add' %}" class="resha-btn resha-btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Add Garment
+      </a>
+      <a href="{% url 'admin:orders_order_changelist' %}" class="resha-btn resha-btn-secondary">
+        Orders ({{ resha_metrics.total_orders }})
+      </a>
+      <a href="{% url 'admin:orders_storeconfig_changelist' %}" class="resha-btn resha-btn-ghost">
+        Store Settings
+      </a>
+    </div>
+  </section>
+
+  <!-- Primary 4 KPI Bento Cards -->
+  <section class="resha-kpi-grid" aria-label="Storefront metrics">
+    <article class="resha-kpi-card resha-kpi-featured">
+      <div class="resha-kpi-head">
+        <span class="resha-kpi-label">Gross Revenue</span>
+        <span class="resha-kpi-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+        </span>
+      </div>
+      <strong class="resha-kpi-value">{{ resha_metrics.total_revenue_display }}</strong>
+      <div class="resha-kpi-foot">
+        <span>30d: {{ resha_metrics.revenue_30d_display }}</span>
+        <span>AOV: {{ resha_metrics.avg_order_value_display }}</span>
+      </div>
+    </article>
+
+    <article class="resha-kpi-card">
+      <div class="resha-kpi-head">
+        <span class="resha-kpi-label">Order Pipeline</span>
+        <span class="resha-kpi-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        </span>
+      </div>
+      <strong class="resha-kpi-value">{{ resha_metrics.total_orders }}</strong>
+      <div class="resha-kpi-foot">
+        <span class="resha-chip-warn">{{ resha_metrics.pending_orders }} awaiting dispatch</span>
+        <span>{{ resha_metrics.shipped_orders }} shipped</span>
+      </div>
+    </article>
+
+    <article class="resha-kpi-card">
+      <div class="resha-kpi-head">
+        <span class="resha-kpi-label">Catalog &amp; Inventory</span>
+        <span class="resha-kpi-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20.38 3.46L16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg>
+        </span>
+      </div>
+      <strong class="resha-kpi-value">{{ resha_metrics.active_products }} <small>/ {{ resha_metrics.total_products }}</small></strong>
+      <div class="resha-kpi-foot">
+        <span>{{ resha_metrics.total_inventory_units }} units stocked</span>
+        <span class="resha-chip-danger">{{ resha_metrics.out_of_stock_count }} zeroed sizes</span>
+      </div>
+    </article>
+
+    <article class="resha-kpi-card">
+      <div class="resha-kpi-head">
+        <span class="resha-kpi-label">Community &amp; Privileges</span>
+        <span class="resha-kpi-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </span>
+      </div>
+      <strong class="resha-kpi-value">{{ resha_metrics.avg_catalog_rating }} ★</strong>
+      <div class="resha-kpi-foot">
+        <span>{{ resha_metrics.approved_reviews_count }} reviews</span>
+        <span>{{ resha_metrics.subscriber_count }} subscribers · {{ resha_metrics.active_promos_count }} codes</span>
+      </div>
+    </article>
+  </section>
+
+  <!-- Order Fulfillment Pipeline Strip -->
+  <section class="resha-pipeline-bar" aria-label="Order fulfillment pipeline">
+    <div class="resha-pipeline-title">
+      <span>Fulfillment Stages</span>
+      <a href="{% url 'admin:orders_order_changelist' %}">All Orders →</a>
+    </div>
+    <div class="resha-pipeline-steps">
+      {% for stage in order_pipeline %}
+      <a href="{% url 'admin:orders_order_changelist' %}?status__exact={{ stage.key }}" class="resha-stage-pill">
+        <span class="resha-stage-dot resha-status-{{ stage.key }}"></span>
+        <span class="resha-stage-name">{{ stage.label }}</span>
+        <strong class="resha-stage-count">{{ stage.count }}</strong>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- Analytics Row: Five Pillars + Fabric & Collection Mix -->
+  <section class="resha-grid-2">
+    <div class="resha-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Category Architecture</span>
+          <h2>Five Pillars Breakdown</h2>
+        </div>
+        <a href="{% url 'admin:products_category_changelist' %}" class="resha-link">Manage Categories →</a>
+      </div>
+      <div class="resha-pillar-list">
+        {% for cat in category_stats %}
+        <a href="{% url 'admin:products_product_changelist' %}?category__id__exact={{ cat.pk }}" class="resha-pillar-row">
+          <div class="resha-pillar-thumb">
+            {% if cat.thumb %}
+              <img src="{{ cat.thumb }}" alt="{{ cat.name }}" loading="lazy">
+            {% else %}
+              <span>{{ cat.name|slice:":1" }}</span>
+            {% endif %}
+          </div>
+          <div class="resha-pillar-info">
+            <div class="resha-pillar-top">
+              <strong>{{ cat.name }}</strong>
+              <span class="resha-mono">{{ cat.active_styles }} styles · {{ cat.stock_units }} units</span>
+            </div>
+            <div class="resha-progress-track">
+              <div class="resha-progress-fill" style="width: {{ cat.bar_pct }}%;"></div>
+            </div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="resha-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Material &amp; Capsule Mix</span>
+          <h2>Fabrics &amp; Collections</h2>
+        </div>
+        <a href="{% url 'admin:products_collection_changelist' %}" class="resha-link">Collections →</a>
+      </div>
+
+      <div class="resha-mix-block">
+        {% for fab in fabric_breakdown %}
+        <div class="resha-mix-row">
+          <div class="resha-mix-label">
+            <span>{{ fab.name }}</span>
+            <span class="resha-mono">{{ fab.count }} ({{ fab.pct }}%)</span>
+          </div>
+          <div class="resha-progress-track resha-progress-soft">
+            <div class="resha-progress-fill resha-fill-rose" style="width: {{ fab.pct }}%;"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if collection_stats %}
+      <div class="resha-collection-pills">
+        {% for col in collection_stats %}
+        <a href="{% url 'admin:products_product_changelist' %}?collection__id__exact={{ col.pk }}" class="resha-col-pill">
+          <span>{{ col.name }}</span>
+          <strong class="resha-mono">{{ col.active_styles }}</strong>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Operations Row: Recent Orders & Low Stock Attention Queue -->
+  <section class="resha-grid-2">
+    <div class="resha-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Live Dispatch</span>
+          <h2>Recent Orders</h2>
+        </div>
+        <a href="{% url 'admin:orders_order_changelist' %}" class="resha-link">View All →</a>
+      </div>
+
+      {% if recent_orders %}
+      <div class="resha-table-wrap">
+        <table class="resha-table">
+          <thead>
+            <tr>
+              <th>Order</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th class="resha-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in recent_orders %}
+            <tr>
+              <td>
+                <a href="{% url 'admin:orders_order_change' order.pk %}" class="resha-mono resha-order-link">{{ order.order_number }}</a>
+                <div class="resha-cell-sub">{{ order.placed_at|date:"M d, H:i" }}</div>
+              </td>
+              <td>
+                <div class="resha-cell-strong">{{ order.shipping_name }}</div>
+                <div class="resha-cell-sub">{{ order.email }}</div>
+              </td>
+              <td><span class="resha-status-pill resha-status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+              <td class="resha-right resha-mono resha-cell-strong">Rs. {{ order.total }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="resha-empty-state">
+        <p>No customer orders recorded yet.</p>
+        <span>Orders submitted through <code>POST /api/orders/</code> or created manually appear here in real time.</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="resha-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Inventory Queue</span>
+          <h2>Low &amp; Out-of-Stock Alerts</h2>
+        </div>
+        <a href="{% url 'admin:products_product_changelist' %}?stock_status=out" class="resha-link">Zeroed SKUs →</a>
+      </div>
+
+      {% if low_stock_items %}
+      <div class="resha-table-wrap">
+        <table class="resha-table">
+          <thead>
+            <tr>
+              <th>Garment</th>
+              <th>Size</th>
+              <th class="resha-right">Stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in low_stock_items %}
+            <tr>
+              <td>
+                <a href="{% url 'admin:products_product_change' item.product.pk %}" class="resha-garment-cell">
+                  {% if item.thumb %}
+                    <img src="{{ item.thumb }}" alt="{{ item.product.name }}" loading="lazy">
+                  {% endif %}
+                  <span>
+                    <strong>{{ item.product.name }}</strong>
+                    <small>{{ item.product.category.name }} · {{ item.product.sku }}</small>
+                  </span>
+                </a>
+              </td>
+              <td><span class="resha-size-chip">{{ item.size }}</span></td>
+              <td class="resha-right">
+                {% if item.stock_count == 0 %}
+                  <span class="resha-stock-badge resha-stock-out">0 · Sold Out</span>
+                {% else %}
+                  <span class="resha-stock-badge resha-stock-low">{{ item.stock_count }} left</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="resha-empty-state">
+        <p>All active sizes are well stocked.</p>
+        <span>Every active garment currently holds more than 4 units per size.</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Bottom Row: Client Impressions & Recent Admin Activity -->
+  <section class="resha-grid-2">
+    <div class="resha-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Client Feedback</span>
+          <h2>Latest Reviews</h2>
+        </div>
+        <a href="{% url 'admin:products_productreview_changelist' %}" class="resha-link">Moderate →</a>
+      </div>
+      {% if recent_reviews %}
+      <ul class="resha-review-list">
+        {% for rev in recent_reviews %}
+        <li>
+          <div class="resha-review-top">
+            <div>
+              <strong>{{ rev.author }}</strong>
+              {% if rev.location %}<span class="resha-cell-sub">· {{ rev.location }}</span>{% endif %}
+            </div>
+            <span class="resha-stars">{{ rev.rating }}.0 ★</span>
+          </div>
+          <p class="resha-review-quote">&ldquo;{{ rev.comment|truncatechars:115 }}&rdquo;</p>
+          <div class="resha-review-meta">
+            <a href="{% url 'admin:products_product_change' rev.product.pk %}">{{ rev.product.name }}</a>
+            <span>Size {{ rev.size_purchased }} · {{ rev.fit_feedback }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="resha-empty-state"><p>No client reviews recorded yet.</p></div>
+      {% endif %}
+    </div>
+
+    <div class="resha-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Audit Trail</span>
+          <h2>Recent Admin Actions</h2>
+        </div>
+      </div>
+      {% get_admin_log 8 as admin_log for_user user %}
+      {% if admin_log %}
+      <ul class="resha-activity-list">
+        {% for entry in admin_log %}
+        <li>
+          <span class="resha-act-dot {% if entry.is_addition %}is-add{% elif entry.is_deletion %}is-del{% else %}is-chg{% endif %}"></span>
+          <div class="resha-act-body">
+            {% if entry.is_deletion or not entry.get_admin_url %}
+              <strong>{{ entry.object_repr }}</strong>
+            {% else %}
+              <a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>
+            {% endif %}
+            <span>
+              {% if entry.is_addition %}Added{% elif entry.is_deletion %}Deleted{% else %}Updated{% endif %}
+              {% if entry.content_type %}· {{ entry.content_type.name|capfirst }}{% endif %}
+              · {{ entry.action_time|timesince }} ago
+            </span>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="resha-empty-state">
+        <p>No recent edits yet.</p>
+        <span>Catalog, order, and store configuration updates you make will show here.</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Modern Workspace Directory Cards -->
+  <section class="resha-workspace-grid" aria-label="Workspace modules">
+    {% for app in app_list %}
+    <div class="resha-card resha-module-card">
+      <div class="resha-card-head">
+        <div>
+          <span class="resha-eyebrow">Workspace</span>
+          <h2><a href="{{ app.app_url }}">{{ app.name }}</a></h2>
+        </div>
+      </div>
+      <div class="resha-model-links">
+        {% for model in app.models %}
+        <div class="resha-model-row">
+          <a href="{{ model.admin_url|default:'#' }}" class="resha-model-name">{{ model.name }}</a>
+          <div class="resha-model-actions">
+            {% if model.add_url %}
+              <a href="{{ model.add_url }}" class="resha-mini-btn">+ Add</a>
+            {% endif %}
+            {% if model.admin_url %}
+              <a href="{{ model.admin_url }}" class="resha-mini-btn resha-mini-ghost">
+                {% if model.view_only %}View{% else %}Manage{% endif %}
+              </a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}
+{% block sidebar %}{% endblock %}

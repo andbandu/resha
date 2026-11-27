@@ -137,7 +137,7 @@ export default function SiteFooter() {
         <div className="mt-14 flex flex-col items-start justify-between gap-4 border-t border-[#242429] pt-8 text-xs text-[#8E8E98] sm:flex-row sm:items-center">
           <p>© 2026 RESHA Contemporary Womenswear. All rights reserved.</p>
           <div className="flex flex-wrap gap-6">
-            <span>Complimentary Express Shipping Over $120</span>
+            <span>Complimentary Express Shipping Over Rs. 120</span>
             <span>30-Day Effortless Returns</span>
           </div>
         </div>

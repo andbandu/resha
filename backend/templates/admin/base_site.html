@@ -1,0 +1,59 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | RESHA Atelier Admin{% endblock %}
+
+{% block responsive %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin/css/resha_admin.css' %}">
+{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="{% static 'admin/js/resha_admin.js' %}" defer></script>
+{% endblock %}
+
+{% block branding %}
+<div id="site-name" class="resha-branding">
+  <a href="{% url 'admin:index' %}" class="resha-brand-link">
+    <span class="resha-brand-mark" aria-hidden="true">R</span>
+    <span class="resha-brand-text">
+      <span class="resha-wordmark">RESHA</span>
+      <span class="resha-brand-sub">Atelier Commerce</span>
+    </span>
+  </a>
+</div>
+{% endblock %}
+
+{% block usertools %}
+{% if has_permission %}
+<div id="user-tools" class="resha-user-tools">
+  {% if site_url %}
+    <a href="{{ site_url }}" target="_blank" rel="noopener" class="resha-top-pill resha-top-store">
+      <span>Storefront</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+    </a>
+  {% endif %}
+  <a href="{% url 'admin:products_product_add' %}" class="resha-top-pill resha-top-cta">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    <span>New Garment</span>
+  </a>
+  {% include "admin/color_theme_toggle.html" %}
+  <div class="resha-user-chip">
+    <span class="resha-avatar" aria-hidden="true">{{ user.get_username|slice:":1"|upper }}</span>
+    <span class="resha-user-meta">
+      <strong>{% firstof user.get_short_name user.get_username %}</strong>
+      {% if user.has_usable_password %}
+        <a href="{% url 'admin:password_change' %}">Account</a>
+      {% endif %}
+    </span>
+  </div>
+  <form id="logout-form" method="post" action="{% url 'admin:logout' %}">
+    {% csrf_token %}
+    <button type="submit" class="resha-logout-btn" title="{% translate 'Log out' %}">{% translate 'Log out' %}</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

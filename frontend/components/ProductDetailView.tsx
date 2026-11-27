@@ -477,7 +477,7 @@ export default function ProductDetailView({
                       <li key={c}>· {c}</li>
                     ))}
                     <li className="pt-1 text-[#1F5C42]">
-                      · Complimentary express shipping over $120 · 30-day
+                      · Complimentary express shipping over Rs. 120 · 30-day
                       effortless returns
                     </li>
                   </ul>

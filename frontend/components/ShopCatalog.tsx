@@ -352,7 +352,7 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
           <div>
             <div className="mb-2.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.16em] text-[#9E5E6A]">
               <span>Max Price</span>
-              <span className="font-mono text-[#0E0E10]">${maxPrice}</span>
+              <span className="font-mono text-[#0E0E10]">Rs. {maxPrice}</span>
             </div>
             <input
               type="range"
@@ -365,8 +365,8 @@ export default function ShopCatalog({ products }: { products: Product[] }) {
               className="w-full accent-[#9E5E6A]"
             />
             <div className="mt-1 flex justify-between font-mono text-[11px] text-[#63636B]">
-              <span>$60</span>
-              <span>$150</span>
+              <span>Rs. 60</span>
+              <span>Rs. 150</span>
             </div>
           </div>
         </div>

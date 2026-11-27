@@ -61,7 +61,7 @@ export const PROMO_CODES: PromoCode[] = [
   },
   {
     code: "CASUAL20",
-    description: "$20 Wardrobe Credit",
+    description: "Rs. 20 Wardrobe Credit",
     type: "fixed",
     value: 20,
   },
@@ -1566,9 +1566,9 @@ export function getRelatedProducts(product: Product, count = 4): Product[] {
 }
 
 export function formatPrice(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(amount);
+  return `Rs. ${formatted}`;
 }

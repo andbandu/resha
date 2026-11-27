@@ -48,7 +48,7 @@ export default function SiteHeader() {
       {/* Announcement Strip */}
       <div className="bg-[#0E0E10] px-4 py-2 text-center text-[11px] uppercase tracking-[0.2em] text-[#FFFFFF]">
         <span>
-          Complimentary Express Shipping Over $120 · New Season Casualwear ·
+          Complimentary Express Shipping Over Rs. 120 · New Season Casualwear ·
           Code:{" "}
         </span>
         <span className="font-mono font-medium text-[#E8B4BE]">RESHA10</span>
