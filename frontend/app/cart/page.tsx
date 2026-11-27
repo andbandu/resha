@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import type { Metadata } from "next";
-import { fetchProducts } from "@/lib/catalog";
+import { fetchProducts } from "@/services/products";
 import type { Product } from "@/lib/types";
 import CartView from "@/components/CartView";
 

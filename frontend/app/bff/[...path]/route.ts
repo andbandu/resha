@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getServerApiBaseUrl } from "@/lib/api";
+import { getServerApiBaseUrl } from "@/services/http";
 
 const ALLOWED_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 

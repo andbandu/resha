@@ -9,14 +9,13 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
+import { DEFAULT_STORE_CONFIG, getS3ImageUrl } from "@/lib/catalog";
+import { fetchCategories } from "@/services/products";
 import {
-  DEFAULT_STORE_CONFIG,
-  fetchCategories,
   fetchPromos,
   fetchStoreConfig,
-  getS3ImageUrl,
   validatePromoCode,
-} from "@/lib/catalog";
+} from "@/services/orders";
 import type {
   CartItem,
   CategoryItem,

@@ -4,11 +4,9 @@ import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import {
-  ApiRequestError,
-  formatPrice,
-  submitProductReview,
-} from "@/lib/catalog";
+import { formatPrice } from "@/lib/catalog";
+import { ApiRequestError } from "@/services/http";
+import { submitProductReview } from "@/services/products";
 import type { Product, ProductReview, SizeOption } from "@/lib/types";
 import { useCart } from "./CartContext";
 import ProductCard from "./ProductCard";

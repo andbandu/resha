@@ -1,13 +1,9 @@
 import React, { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import {
-  DEFAULT_STORE_CONFIG,
-  fetchCategories,
-  fetchProducts,
-  fetchStoreConfig,
-  formatPrice,
-} from "@/lib/catalog";
+import { DEFAULT_STORE_CONFIG, formatPrice } from "@/lib/catalog";
+import { fetchCategories, fetchProducts } from "@/services/products";
+import { fetchStoreConfig } from "@/services/orders";
 import type { CategoryItem, Product, StoreConfig } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
 import ApiErrorState from "@/components/ApiErrorState";

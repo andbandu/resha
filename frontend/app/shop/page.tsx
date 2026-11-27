@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import type { Metadata } from "next";
-import { fetchCategories, fetchProducts } from "@/lib/catalog";
+import { fetchCategories, fetchProducts } from "@/services/products";
 import type { CategoryItem, Product } from "@/lib/types";
 import ShopCatalog from "@/components/ShopCatalog";
 import ApiErrorState from "@/components/ApiErrorState";

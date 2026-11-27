@@ -3,7 +3,9 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ApiRequestError, createOrder, formatPrice } from "@/lib/catalog";
+import { formatPrice } from "@/lib/catalog";
+import { ApiRequestError } from "@/services/http";
+import { createOrder } from "@/services/orders";
 import type { OrderRecord } from "@/lib/types";
 import { useCart } from "./CartContext";
 import { ArrowRightIcon, BagIcon, CheckIcon, ShieldIcon } from "./Icons";

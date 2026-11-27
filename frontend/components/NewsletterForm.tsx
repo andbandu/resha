@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { ApiRequestError, subscribeNewsletter } from "@/lib/catalog";
+import { ApiRequestError } from "@/services/http";
+import { subscribeNewsletter } from "@/services/orders";
 import type { NewsletterResponse } from "@/lib/types";
 import { ArrowRightIcon, CheckIcon } from "./Icons";
 

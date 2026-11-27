@@ -1,7 +1,7 @@
 import React, { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { fetchProductBySlug, fetchProducts } from "@/lib/catalog";
+import { fetchProductBySlug, fetchProducts } from "@/services/products";
 import type { ProductDetail } from "@/lib/types";
 import ProductDetailView from "@/components/ProductDetailView";
 import ApiErrorState from "@/components/ApiErrorState";
