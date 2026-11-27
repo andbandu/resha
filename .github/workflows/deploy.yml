@@ -15,7 +15,7 @@ jobs:
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
-            cd ~/my-store
+            cd ~/resha
             git pull origin main
             docker compose up -d --build
             docker image prune -f
