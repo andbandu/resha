@@ -8,7 +8,6 @@ from products.models import SizeOption
 from .models import (
     DeliveryMethod,
     NewsletterSource,
-    NewsletterSubscriber,
     Order,
     OrderItem,
     PaymentMethod,
@@ -19,6 +18,59 @@ from .models import (
 
 def _clean_number(value: Decimal):
     return int(value) if value == int(value) else float(value)
+
+
+FORBIDDEN_ITEM_PRICE_FIELDS = frozenset(
+    {
+        "price",
+        "unitPrice",
+        "unit_price",
+        "lineTotal",
+        "line_total",
+        "subtotal",
+        "discount",
+        "total",
+    }
+)
+
+FORBIDDEN_ORDER_PRICE_FIELDS = frozenset(
+    {
+        "price",
+        "unitPrice",
+        "unit_price",
+        "subtotal",
+        "discount",
+        "discountAmount",
+        "discount_amount",
+        "shippingCost",
+        "shipping_cost",
+        "tax",
+        "total",
+        "status",
+        "paymentStatus",
+        "payment_status",
+    }
+)
+
+
+class RejectClientPricingMixin:
+    """Explicitly reject any client-supplied prices, totals, discounts, or order statuses."""
+
+    forbidden_fields: frozenset[str] = FORBIDDEN_ORDER_PRICE_FIELDS
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            rejected = sorted(key for key in data.keys() if key in self.forbidden_fields)
+            if rejected:
+                raise serializers.ValidationError(
+                    {
+                        "detail": (
+                            "Client-supplied pricing or status fields are not permitted: "
+                            f"{', '.join(rejected)}."
+                        )
+                    }
+                )
+        return super().to_internal_value(data)
 
 
 class StoreConfigSerializer(serializers.ModelSerializer):
@@ -71,14 +123,40 @@ class PromoCodeSerializer(serializers.ModelSerializer):
         return _clean_number(obj.min_order_amount)
 
 
-class PromoValidateInputSerializer(serializers.Serializer):
+class CheckoutItemInputSerializer(RejectClientPricingMixin, serializers.Serializer):
+    forbidden_fields = FORBIDDEN_ITEM_PRICE_FIELDS
+
+    productId = serializers.CharField(required=False, allow_blank=True)
+    slug = serializers.CharField(required=False, allow_blank=True)
+    sku = serializers.CharField(required=False, allow_blank=True)
+    colorName = serializers.CharField(required=False, allow_blank=True, default="")
+    size = serializers.ChoiceField(choices=SizeOption.choices)
+    quantity = serializers.IntegerField(min_value=1, max_value=10)
+
+    def validate(self, attrs):
+        if not (attrs.get("productId") or attrs.get("slug") or attrs.get("sku")):
+            raise serializers.ValidationError(
+                "Each order item must specify productId, slug, or sku."
+            )
+        return attrs
+
+
+class PromoValidateInputSerializer(RejectClientPricingMixin, serializers.Serializer):
+    forbidden_fields = FORBIDDEN_ORDER_PRICE_FIELDS
+
     code = serializers.CharField(max_length=40)
-    subtotal = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        required=False,
-        default=Decimal("0.00"),
+    items = CheckoutItemInputSerializer(many=True, required=False, default=list)
+
+
+class OrderQuoteInputSerializer(RejectClientPricingMixin, serializers.Serializer):
+    forbidden_fields = FORBIDDEN_ORDER_PRICE_FIELDS
+
+    items = CheckoutItemInputSerializer(many=True, required=False, default=list)
+    deliveryMethod = serializers.ChoiceField(
+        choices=DeliveryMethod.choices,
+        default=DeliveryMethod.STANDARD,
     )
+    promoCode = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")
 
 
 class OrderItemRecordSerializer(serializers.ModelSerializer):
@@ -178,23 +256,9 @@ class OrderRecordSerializer(serializers.ModelSerializer):
         return obj.gift_note or None
 
 
-class CheckoutItemInputSerializer(serializers.Serializer):
-    productId = serializers.CharField(required=False, allow_blank=True)
-    slug = serializers.CharField(required=False, allow_blank=True)
-    sku = serializers.CharField(required=False, allow_blank=True)
-    colorName = serializers.CharField(required=False, allow_blank=True, default="")
-    size = serializers.ChoiceField(choices=SizeOption.choices)
-    quantity = serializers.IntegerField(min_value=1, max_value=10)
+class CheckoutCreateSerializer(RejectClientPricingMixin, serializers.Serializer):
+    forbidden_fields = FORBIDDEN_ORDER_PRICE_FIELDS
 
-    def validate(self, attrs):
-        if not (attrs.get("productId") or attrs.get("slug") or attrs.get("sku")):
-            raise serializers.ValidationError(
-                "Each order item must specify productId, slug, or sku."
-            )
-        return attrs
-
-
-class CheckoutCreateSerializer(serializers.Serializer):
     email = serializers.EmailField()
     newsletter = serializers.BooleanField(required=False, default=False)
     firstName = serializers.CharField(max_length=80)

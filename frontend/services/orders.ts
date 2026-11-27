@@ -1,6 +1,8 @@
 import type {
+  CheckoutItemPayload,
   CheckoutOrderPayload,
   NewsletterResponse,
+  OrderQuoteResponse,
   OrderRecord,
   PromoCode,
   PromoValidationResponse,
@@ -18,12 +20,12 @@ export async function fetchPromos(): Promise<PromoCode[]> {
 
 export async function validatePromoCode(
   code: string,
-  subtotal: number
+  items: CheckoutItemPayload[]
 ): Promise<PromoValidationResponse> {
   try {
     return await apiFetch<PromoValidationResponse>("/promos/validate/", {
       method: "POST",
-      body: JSON.stringify({ code, subtotal }),
+      body: JSON.stringify({ code, items }),
     });
   } catch (err) {
     if (
@@ -37,12 +39,28 @@ export async function validatePromoCode(
           ok: false,
           message: payload.message,
           promo: payload.promo ?? null,
+          subtotal: payload.subtotal,
           discountAmount: payload.discountAmount ?? 0,
         };
       }
     }
     throw err;
   }
+}
+
+export async function fetchOrderQuote(payload: {
+  items: CheckoutItemPayload[];
+  deliveryMethod: "standard" | "express" | "studio";
+  promoCode?: string;
+}): Promise<OrderQuoteResponse> {
+  return apiFetch<OrderQuoteResponse>("/orders/quote/", {
+    method: "POST",
+    body: JSON.stringify({
+      items: payload.items,
+      deliveryMethod: payload.deliveryMethod,
+      promoCode: payload.promoCode ?? "",
+    }),
+  });
 }
 
 export async function createOrder(

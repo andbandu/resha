@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from products.models import Product, ProductSizeStock
 
 from .models import (
     DeliveryMethod,
@@ -28,14 +24,22 @@ from .models import (
 from .serializers import (
     CheckoutCreateSerializer,
     NewsletterSubscribeSerializer,
+    OrderQuoteInputSerializer,
     OrderRecordSerializer,
     PromoCodeSerializer,
     PromoValidateInputSerializer,
     StoreConfigSerializer,
 )
+from .services import (
+    OrderPricingError,
+    calculate_order_pricing,
+    clean_decimal_number,
+    resolve_cart_items,
+)
 
 
 class HealthCheckView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -43,6 +47,7 @@ class HealthCheckView(APIView):
 
 
 class StoreConfigView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -51,6 +56,7 @@ class StoreConfigView(APIView):
 
 
 class PromoCodeListView(generics.ListAPIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
     serializer_class = PromoCodeSerializer
 
@@ -59,13 +65,33 @@ class PromoCodeListView(generics.ListAPIView):
 
 
 class PromoCodeValidateView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = PromoValidateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         raw_code = serializer.validated_data["code"].strip().upper()
-        subtotal = serializer.validated_data["subtotal"]
+        raw_items = serializer.validated_data.get("items", [])
+
+        try:
+            _, subtotal = resolve_cart_items(
+                raw_items,
+                lock_stock=False,
+                enforce_stock=False,
+                request=request,
+            )
+        except OrderPricingError as exc:
+            return Response(
+                {
+                    "ok": False,
+                    "message": exc.detail,
+                    "promo": None,
+                    "subtotal": 0,
+                    "discountAmount": 0,
+                },
+                status=exc.status_code,
+            )
 
         promo = PromoCode.objects.filter(code=raw_code).first()
         if not promo:
@@ -74,6 +100,7 @@ class PromoCodeValidateView(APIView):
                     "ok": False,
                     "message": "Code not recognized. Try RESHA10 or CASUAL20.",
                     "promo": None,
+                    "subtotal": clean_decimal_number(subtotal),
                     "discountAmount": 0,
                 },
                 status=status.HTTP_404_NOT_FOUND,
@@ -86,6 +113,7 @@ class PromoCodeValidateView(APIView):
                     "ok": False,
                     "message": message,
                     "promo": None,
+                    "subtotal": clean_decimal_number(subtotal),
                     "discountAmount": 0,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -97,12 +125,85 @@ class PromoCodeValidateView(APIView):
                 "ok": True,
                 "message": message,
                 "promo": PromoCodeSerializer(promo).data,
-                "discountAmount": int(discount) if discount == int(discount) else float(discount),
+                "subtotal": clean_decimal_number(subtotal),
+                "discountAmount": clean_decimal_number(discount),
+            }
+        )
+
+
+class OrderQuoteView(APIView):
+    """Authoritative server-computed pricing quote for cart and checkout review."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = OrderQuoteInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            pricing = calculate_order_pricing(
+                data.get("items", []),
+                data["deliveryMethod"],
+                data.get("promoCode", ""),
+                lock_stock=False,
+                lock_promo=False,
+                enforce_stock=False,
+                strict_promo=False,
+                request=request,
+            )
+        except OrderPricingError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
+
+        return Response(
+            {
+                "items": [
+                    {
+                        "key": f"{item.product.code}__{item.color_name}__{item.size}",
+                        "productId": item.product.code,
+                        "slug": item.product.slug,
+                        "sku": item.product.sku,
+                        "name": item.product.name,
+                        "fabric": item.product.fabric,
+                        "image": item.image_url,
+                        "colorName": item.color_name,
+                        "colorHex": item.color_hex,
+                        "size": item.size,
+                        "quantity": item.quantity,
+                        "unitPrice": clean_decimal_number(item.unit_price),
+                        "lineTotal": clean_decimal_number(item.line_total),
+                        "inStock": item.in_stock,
+                        "availableStock": item.available_stock,
+                    }
+                    for item in pricing.items
+                ],
+                "subtotal": clean_decimal_number(pricing.subtotal),
+                "discount": clean_decimal_number(pricing.discount),
+                "shippingCost": clean_decimal_number(pricing.shipping_cost),
+                "tax": clean_decimal_number(pricing.tax),
+                "total": clean_decimal_number(pricing.total),
+                "promoCode": pricing.promo_code,
+                "promoApplied": (
+                    PromoCodeSerializer(pricing.promo).data if pricing.promo else None
+                ),
+                "promoMessage": pricing.promo_message,
+                "freeShippingThreshold": clean_decimal_number(
+                    pricing.config.free_shipping_threshold
+                ),
+                "standardShippingCost": clean_decimal_number(
+                    pricing.config.standard_shipping_cost
+                ),
+                "expressShippingCost": clean_decimal_number(
+                    pricing.config.express_shipping_cost
+                ),
+                "taxRatePercent": clean_decimal_number(pricing.config.tax_rate_percent),
             }
         )
 
 
 class OrderCreateView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     @transaction.atomic
@@ -111,111 +212,24 @@ class OrderCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        config = StoreConfig.get_solo()
-        subtotal = Decimal("0.00")
-        prepared_items = []
-
-        for entry in data["items"]:
-            lookup = Q()
-            if entry.get("productId"):
-                lookup |= Q(code=entry["productId"])
-            if entry.get("slug"):
-                lookup |= Q(slug=entry["slug"])
-            if entry.get("sku"):
-                lookup |= Q(sku=entry["sku"])
-
-            product = (
-                Product.objects.filter(lookup, is_active=True)
-                .prefetch_related("colors", "images")
-                .first()
-            )
-            if not product:
-                return Response(
-                    {"detail": "One or more selected garments are no longer available."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            size_stock = (
-                ProductSizeStock.objects.select_for_update()
-                .filter(product=product, size=entry["size"])
-                .first()
-            )
-            qty = entry["quantity"]
-            if not size_stock or not size_stock.in_stock or size_stock.stock_count < qty:
-                available = size_stock.stock_count if size_stock else 0
-                return Response(
-                    {
-                        "detail": f"Insufficient stock for {product.name} in size {entry['size']} (available: {available})."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            color_name = (entry.get("colorName") or "").strip()
-            color_obj = None
-            if color_name:
-                color_obj = product.colors.filter(name__iexact=color_name).first()
-            if not color_obj:
-                color_obj = product.colors.first()
-
-            resolved_color_name = color_obj.name if color_obj else (color_name or "Studio Shade")
-            resolved_color_hex = color_obj.hex if color_obj else "#0E0E10"
-            resolved_image = (
-                color_obj.get_image_url(request=request)
-                if color_obj
-                else product.get_primary_image_url(request=request)
-            )
-
-            line_subtotal = product.price * qty
-            subtotal += line_subtotal
-
-            prepared_items.append(
-                {
-                    "product": product,
-                    "size_stock": size_stock,
-                    "quantity": qty,
-                    "color_name": resolved_color_name,
-                    "color_hex": resolved_color_hex,
-                    "image_url": resolved_image,
-                }
-            )
-
-        # Validate & apply promo code if provided
-        promo = None
-        promo_label = ""
-        discount = Decimal("0.00")
-        raw_promo = (data.get("promoCode") or "").strip().upper()
-        if raw_promo:
-            promo = PromoCode.objects.select_for_update().filter(code=raw_promo).first()
-            if not promo:
-                return Response(
-                    {"detail": f"Promo code '{raw_promo}' was not recognized."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            ok, msg = promo.validate_for_subtotal(subtotal)
-            if not ok:
-                return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
-            discount = promo.calculate_discount(subtotal)
-            promo_label = promo.code
-            promo.times_used = F("times_used") + 1
-            promo.save(update_fields=["times_used"])
-
         delivery_method = data["deliveryMethod"]
-        if delivery_method == DeliveryMethod.STANDARD:
-            shipping_cost = (
-                Decimal("0.00")
-                if subtotal >= config.free_shipping_threshold
-                else config.standard_shipping_cost
+        try:
+            pricing = calculate_order_pricing(
+                data["items"],
+                delivery_method,
+                data.get("promoCode", ""),
+                lock_stock=True,
+                lock_promo=True,
+                enforce_stock=True,
+                strict_promo=True,
+                request=request,
             )
-        elif delivery_method == DeliveryMethod.EXPRESS:
-            shipping_cost = config.express_shipping_cost
-        else:
-            shipping_cost = Decimal("0.00")
+        except OrderPricingError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
 
-        discounted_subtotal = max(Decimal("0.00"), subtotal - discount)
-        tax = (
-            discounted_subtotal * (config.tax_rate_percent / Decimal("100"))
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        total = discounted_subtotal + shipping_cost + tax
+        if pricing.promo:
+            pricing.promo.times_used = F("times_used") + 1
+            pricing.promo.save(update_fields=["times_used"])
 
         city_state_zip = (
             f"{data['city'].strip()}"
@@ -254,42 +268,41 @@ class OrderCreateView(APIView):
             shipping_address=full_address,
             delivery_method=delivery_method,
             shipping_method_label=dict(DeliveryMethod.choices)[delivery_method],
-            shipping_cost=shipping_cost,
-            promo_code=promo,
-            promo_code_label=promo_label,
-            subtotal=subtotal,
-            discount=discount,
-            tax=tax,
-            total=total,
+            shipping_cost=pricing.shipping_cost,
+            promo_code=pricing.promo,
+            promo_code_label=pricing.promo_code,
+            subtotal=pricing.subtotal,
+            discount=pricing.discount,
+            tax=pricing.tax,
+            total=pricing.total,
             gift_wrap=data.get("giftWrap", False),
             gift_note=data.get("giftNote", "").strip(),
             placed_at=timezone.now(),
         )
 
-        for item in prepared_items:
-            product = item["product"]
-            size_stock = item["size_stock"]
-            qty = item["quantity"]
-
+        for item in pricing.items:
             OrderItem.objects.create(
                 order=order,
-                product=product,
-                product_code=product.code,
-                slug=product.slug,
-                sku=product.sku,
-                name=product.name,
-                fabric=product.fabric,
-                image_url=item["image_url"],
-                color_name=item["color_name"],
-                color_hex=item["color_hex"],
-                size=size_stock.size,
-                unit_price=product.price,
-                quantity=qty,
+                product=item.product,
+                product_code=item.product.code,
+                slug=item.product.slug,
+                sku=item.product.sku,
+                name=item.product.name,
+                fabric=item.product.fabric,
+                image_url=item.image_url,
+                color_name=item.color_name,
+                color_hex=item.color_hex,
+                size=item.size,
+                unit_price=item.unit_price,
+                quantity=item.quantity,
             )
 
-            size_stock.stock_count = max(0, size_stock.stock_count - qty)
-            size_stock.in_stock = size_stock.stock_count > 0
-            size_stock.save(update_fields=["stock_count", "in_stock"])
+            assert item.size_stock is not None
+            item.size_stock.stock_count = max(
+                0, item.size_stock.stock_count - item.quantity
+            )
+            item.size_stock.in_stock = item.size_stock.stock_count > 0
+            item.size_stock.save(update_fields=["stock_count", "in_stock"])
 
         if data.get("newsletter"):
             NewsletterSubscriber.objects.update_or_create(
@@ -308,6 +321,7 @@ class OrderCreateView(APIView):
 
 
 class OrderLookupView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request, order_number: str):
@@ -326,6 +340,7 @@ class OrderLookupView(APIView):
 
 
 class NewsletterSubscribeView(APIView):
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):

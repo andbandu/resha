@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { formatPrice } from "@/lib/catalog";
+import { formatPrice, getS3ImageUrl } from "@/lib/catalog";
 import { ApiRequestError } from "@/services/http";
-import { createOrder } from "@/services/orders";
-import type { OrderRecord } from "@/lib/types";
+import { createOrder, fetchOrderQuote } from "@/services/orders";
+import type { OrderQuoteResponse, OrderRecord } from "@/lib/types";
 import { useCart } from "./CartContext";
 import { ArrowRightIcon, BagIcon, CheckIcon, ShieldIcon } from "./Icons";
 
@@ -90,6 +90,52 @@ export default function CheckoutView() {
   const [confirmedOrder, setConfirmedOrder] = useState<OrderRecord | null>(
     null
   );
+
+  const itemDescriptors = useMemo(
+    () =>
+      items.map((item) => ({
+        productId: item.productId,
+        colorName: item.colorName,
+        size: item.size,
+        quantity: item.quantity,
+      })),
+    [items]
+  );
+
+  const quotePayload = useMemo(
+    () => ({
+      items: itemDescriptors,
+      deliveryMethod: form.deliveryMethod,
+      promoCode: appliedPromo?.code ?? "",
+    }),
+    [itemDescriptors, form.deliveryMethod, appliedPromo?.code]
+  );
+  const quoteKey = useMemo(() => JSON.stringify(quotePayload), [quotePayload]);
+
+  const [quoteState, setQuoteState] = useState<{
+    key: string;
+    data: OrderQuoteResponse;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isHydrated || quotePayload.items.length === 0) return;
+    let active = true;
+    fetchOrderQuote(quotePayload)
+      .then((data) => {
+        if (!active) return;
+        setQuoteState({ key: quoteKey, data });
+      })
+      .catch(() => {
+        // Keep preview estimates if quote request fails transiently
+      });
+    return () => {
+      active = false;
+    };
+  }, [isHydrated, quotePayload, quoteKey]);
+
+  const quote = quoteState?.key === quoteKey ? quoteState.data : null;
+  const isQuoteLoading =
+    isHydrated && itemDescriptors.length > 0 && quoteState?.key !== quoteKey;
 
   if (!isHydrated) {
     return (
@@ -291,24 +337,61 @@ export default function CheckoutView() {
     );
   }
 
-  const freeShippingThreshold = storeConfig.freeShippingThreshold || 120;
-  const standardShippingCost = storeConfig.standardShippingCost ?? 18;
-  const expressShippingCost = storeConfig.expressShippingCost ?? 32;
-  const taxRatePercent = storeConfig.taxRatePercent ?? 8;
+  const freeShippingThreshold =
+    quote?.freeShippingThreshold ?? (storeConfig.freeShippingThreshold || 120);
+  const standardShippingCost =
+    quote?.standardShippingCost ?? (storeConfig.standardShippingCost ?? 18);
+  const expressShippingCost =
+    quote?.expressShippingCost ?? (storeConfig.expressShippingCost ?? 32);
+  const taxRatePercent =
+    quote?.taxRatePercent ?? (storeConfig.taxRatePercent ?? 8);
+
+  const displaySubtotal = quote ? quote.subtotal : subtotal;
+  const displayDiscount = quote ? quote.discount : discountAmount;
 
   const standardShipping =
-    subtotal >= freeShippingThreshold ? 0 : standardShippingCost;
+    displaySubtotal >= freeShippingThreshold ? 0 : standardShippingCost;
   const deliveryCostMap: Record<DeliveryMethod, number> = {
     standard: standardShipping,
     express: expressShippingCost,
     studio: 0,
   };
 
-  const shippingCost = deliveryCostMap[form.deliveryMethod];
-  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
-  const tax =
-    Math.round(discountedSubtotal * (taxRatePercent / 100) * 100) / 100;
-  const total = discountedSubtotal + shippingCost + tax;
+  const shippingCost = quote
+    ? quote.shippingCost
+    : deliveryCostMap[form.deliveryMethod];
+  const discountedSubtotal = Math.max(0, displaySubtotal - displayDiscount);
+  const tax = quote
+    ? quote.tax
+    : Math.round(discountedSubtotal * (taxRatePercent / 100) * 100) / 100;
+  const total = quote ? quote.total : discountedSubtotal + shippingCost + tax;
+
+  const hasOutOfStockItem = quote
+    ? quote.items.some((item) => !item.inStock)
+    : false;
+  const quotedItems = quote
+    ? quote.items.map((item) => ({
+        key: item.key,
+        name: item.name,
+        image: item.image ? getS3ImageUrl(item.image) : "",
+        colorName: item.colorName,
+        size: item.size,
+        quantity: item.quantity,
+        lineTotal: item.lineTotal,
+        inStock: item.inStock,
+        availableStock: item.availableStock,
+      }))
+    : items.map((item) => ({
+        key: item.key,
+        name: item.name,
+        image: item.image,
+        colorName: item.colorName,
+        size: item.size,
+        quantity: item.quantity,
+        lineTotal: item.price * item.quantity,
+        inStock: true,
+        availableStock: item.quantity,
+      }));
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -361,6 +444,12 @@ export default function CheckoutView() {
   async function handlePlaceOrder(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
+    if (hasOutOfStockItem) {
+      setSubmitError(
+        "One or more items in your bag are out of stock or exceed available stock. Please update your bag before completing your order."
+      );
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -383,14 +472,7 @@ export default function CheckoutView() {
         giftNote: form.giftNote.trim(),
         paymentMethod: form.paymentMethod,
         promoCode: appliedPromo?.code ?? "",
-        items: items.map((item) => ({
-          productId: item.productId,
-          slug: item.slug,
-          sku: item.sku,
-          colorName: item.colorName,
-          size: item.size,
-          quantity: item.quantity,
-        })),
+        items: itemDescriptors,
       });
 
       setConfirmedOrder(orderRecord);
@@ -927,7 +1009,7 @@ export default function CheckoutView() {
             </div>
 
             <ul className="max-h-80 divide-y divide-[#EEDDE2] overflow-y-auto resha-scroll pr-1">
-              {items.map((item) => (
+              {quotedItems.map((item) => (
                 <li key={item.key} className="flex items-center gap-4 py-3.5">
                   <div className="relative h-20 w-16 shrink-0 overflow-hidden bg-[#F5F5F7]">
                     {item.image && (
@@ -950,9 +1032,16 @@ export default function CheckoutView() {
                     <p className="text-xs text-[#63636B]">
                       {item.colorName} · Size {item.size}
                     </p>
+                    {!item.inStock && (
+                      <p className="mt-0.5 text-[11px] font-medium text-[#9F2D2D]">
+                        {item.availableStock <= 0
+                          ? "Out of stock"
+                          : `Only ${item.availableStock} left in stock`}
+                      </p>
+                    )}
                   </div>
                   <p className="font-mono text-sm text-[#0E0E10]">
-                    {formatPrice(item.price * item.quantity)}
+                    {formatPrice(item.lineTotal)}
                   </p>
                 </li>
               ))}
@@ -962,14 +1051,16 @@ export default function CheckoutView() {
               <div className="flex justify-between text-[#63636B]">
                 <span>Subtotal</span>
                 <span className="font-mono text-[#0E0E10]">
-                  {formatPrice(subtotal)}
+                  {formatPrice(displaySubtotal)}
                 </span>
               </div>
-              {discountAmount > 0 && appliedPromo && (
+              {displayDiscount > 0 && (quote?.promoApplied || appliedPromo) && (
                 <div className="flex justify-between text-[#1F5C42]">
-                  <span>Privilege ({appliedPromo.code})</span>
+                  <span>
+                    Privilege ({(quote?.promoApplied ?? appliedPromo)?.code})
+                  </span>
                   <span className="font-mono">
-                    -{formatPrice(discountAmount)}
+                    -{formatPrice(displayDiscount)}
                   </span>
                 </div>
               )}
@@ -993,14 +1084,23 @@ export default function CheckoutView() {
               </div>
             </div>
 
+            {hasOutOfStockItem && (
+              <p className="border border-[#E8C5C5] bg-[#FDF4F4] px-3 py-2 text-xs text-[#9F2D2D]">
+                One or more items in your bag exceed available stock. Adjust
+                quantities in your bag before placing your order.
+              </p>
+            )}
+
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || hasOutOfStockItem}
               className="flex w-full items-center justify-center gap-2 bg-[#0E0E10] py-4 text-[11px] font-medium uppercase tracking-[0.18em] text-[#FFFFFF] transition-colors hover:bg-[#9E5E6A] disabled:opacity-60"
             >
               {isSubmitting
                 ? "Confirming Order..."
-                : `Complete Order · ${formatPrice(total)}`}
+                : isQuoteLoading
+                  ? "Updating Total..."
+                  : `Complete Order · ${formatPrice(total)}`}
             </button>
 
             <p className="text-center text-[11px] leading-relaxed text-[#63636B]">

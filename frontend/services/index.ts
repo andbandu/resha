@@ -10,6 +10,7 @@ export {
 export type { ProductQueryFilters } from "./products";
 export {
   createOrder,
+  fetchOrderQuote,
   fetchPromos,
   fetchStoreConfig,
   lookupOrder,

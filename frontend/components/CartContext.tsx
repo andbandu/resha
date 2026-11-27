@@ -12,6 +12,7 @@ import React, {
 import { DEFAULT_STORE_CONFIG, getS3ImageUrl } from "@/lib/catalog";
 import { fetchCategories } from "@/services/products";
 import {
+  fetchOrderQuote,
   fetchPromos,
   fetchStoreConfig,
   validatePromoCode,
@@ -19,6 +20,7 @@ import {
 import type {
   CartItem,
   CategoryItem,
+  CheckoutItemPayload,
   Product,
   ProductColor,
   PromoCode,
@@ -362,14 +364,36 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [items]
   );
 
+  const itemDescriptors = useMemo<CheckoutItemPayload[]>(
+    () =>
+      items.map((item) => ({
+        productId: item.productId,
+        colorName: item.colorName,
+        size: item.size,
+        quantity: item.quantity,
+      })),
+    [items]
+  );
+
+  const itemDescriptorKey = useMemo(
+    () => JSON.stringify(itemDescriptors),
+    [itemDescriptors]
+  );
+
   const applyPromoCode = useCallback(
     async (rawCode: string): Promise<{ ok: boolean; message: string }> => {
       const cleaned = rawCode.trim().toUpperCase();
       if (!cleaned) {
         return { ok: false, message: "Enter a privilege code to apply." };
       }
+      if (itemDescriptors.length === 0) {
+        return {
+          ok: false,
+          message: "Add an item to your bag before applying a privilege code.",
+        };
+      }
       try {
-        const res = await validatePromoCode(cleaned, subtotal);
+        const res = await validatePromoCode(cleaned, itemDescriptors);
         if (!res.ok || !res.promo) {
           return {
             ok: false,
@@ -386,29 +410,80 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         };
       }
     },
-    [subtotal]
+    [itemDescriptors]
   );
 
   const removePromoCode = useCallback(() => {
     writePromo(null);
   }, []);
 
-  // Keep persisted promo synced with live Django backend rules
+  // Keep persisted cart item prices & privilege code synced with live Django backend rules
   useEffect(() => {
-    if (!isHydrated || !appliedPromo || subtotal <= 0) return;
+    if (!isHydrated || itemDescriptorKey === "[]") return;
     let active = true;
-    validatePromoCode(appliedPromo.code, subtotal)
-      .then((res) => {
+    const descriptors = JSON.parse(itemDescriptorKey) as CheckoutItemPayload[];
+    fetchOrderQuote({
+      items: descriptors,
+      deliveryMethod: "standard",
+      promoCode: appliedPromo?.code ?? "",
+    })
+      .then((quote) => {
         if (!active) return;
-        if (!res.ok || !res.promo) {
-          writePromo(null);
-        } else if (
-          res.promo.value !== appliedPromo.value ||
-          res.promo.type !== appliedPromo.type ||
-          res.promo.description !== appliedPromo.description ||
-          res.promo.minOrderAmount !== appliedPromo.minOrderAmount
-        ) {
-          writePromo(res.promo);
+
+        const currentCart = getCartSnapshot();
+        let cartChanged = false;
+        const nextCart = currentCart.map((item) => {
+          const authoritative =
+            quote.items.find((entry) => entry.key === item.key) ??
+            quote.items.find(
+              (entry) =>
+                entry.productId === item.productId &&
+                entry.size === item.size &&
+                entry.colorName.toLowerCase() === item.colorName.toLowerCase()
+            );
+          if (!authoritative) return item;
+
+          const nextImage = authoritative.image
+            ? getS3ImageUrl(authoritative.image)
+            : item.image;
+          if (
+            item.price !== authoritative.unitPrice ||
+            item.name !== authoritative.name ||
+            item.slug !== authoritative.slug ||
+            item.sku !== authoritative.sku ||
+            item.fabric !== authoritative.fabric ||
+            item.image !== nextImage
+          ) {
+            cartChanged = true;
+            return {
+              ...item,
+              slug: authoritative.slug,
+              sku: authoritative.sku,
+              name: authoritative.name,
+              fabric: authoritative.fabric,
+              price: authoritative.unitPrice,
+              image: nextImage,
+            };
+          }
+          return item;
+        });
+
+        if (cartChanged) {
+          writeCart(nextCart);
+        }
+
+        if (appliedPromo) {
+          const nextPromo = quote.promoApplied;
+          if (!nextPromo) {
+            writePromo(null);
+          } else if (
+            nextPromo.value !== appliedPromo.value ||
+            nextPromo.type !== appliedPromo.type ||
+            nextPromo.description !== appliedPromo.description ||
+            nextPromo.minOrderAmount !== appliedPromo.minOrderAmount
+          ) {
+            writePromo(nextPromo);
+          }
         }
       })
       .catch(() => {
@@ -417,7 +492,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [isHydrated, appliedPromo, subtotal]);
+  }, [isHydrated, itemDescriptorKey, appliedPromo]);
 
   const toggleWishlist = useCallback((productId: string) => {
     const current = getWishlistSnapshot();

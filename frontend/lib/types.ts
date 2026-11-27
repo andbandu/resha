@@ -114,7 +114,49 @@ export interface PromoValidationResponse {
   ok: boolean;
   message: string;
   promo: PromoCode | null;
+  subtotal?: number;
   discountAmount: number;
+}
+
+export interface CheckoutItemPayload {
+  productId: string;
+  colorName: string;
+  size: SizeOption;
+  quantity: number;
+}
+
+export interface OrderQuoteItem {
+  key: string;
+  productId: string;
+  slug: string;
+  sku: string;
+  name: string;
+  fabric: string;
+  image: string;
+  colorName: string;
+  colorHex: string;
+  size: SizeOption;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  inStock: boolean;
+  availableStock: number;
+}
+
+export interface OrderQuoteResponse {
+  items: OrderQuoteItem[];
+  subtotal: number;
+  discount: number;
+  shippingCost: number;
+  tax: number;
+  total: number;
+  promoCode: string;
+  promoApplied: PromoCode | null;
+  promoMessage: string;
+  freeShippingThreshold: number;
+  standardShippingCost: number;
+  expressShippingCost: number;
+  taxRatePercent: number;
 }
 
 export interface StoreConfig {
@@ -166,14 +208,7 @@ export interface CheckoutOrderPayload {
   giftNote: string;
   paymentMethod: "card" | "cod";
   promoCode: string;
-  items: {
-    productId: string;
-    slug: string;
-    sku: string;
-    colorName: string;
-    size: SizeOption;
-    quantity: number;
-  }[];
+  items: CheckoutItemPayload[];
 }
 
 export interface ReviewCreatePayload {

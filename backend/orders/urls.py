@@ -5,6 +5,7 @@ from .views import (
     NewsletterSubscribeView,
     OrderCreateView,
     OrderLookupView,
+    OrderQuoteView,
     PromoCodeListView,
     PromoCodeValidateView,
     StoreConfigView,
@@ -16,6 +17,7 @@ urlpatterns = [
     path("promos/", PromoCodeListView.as_view(), name="api-promo-list"),
     path("promos/validate/", PromoCodeValidateView.as_view(), name="api-promo-validate"),
     path("orders/", OrderCreateView.as_view(), name="api-order-create"),
+    path("orders/quote/", OrderQuoteView.as_view(), name="api-order-quote"),
     path("orders/<str:order_number>/", OrderLookupView.as_view(), name="api-order-lookup"),
     path("newsletter/", NewsletterSubscribeView.as_view(), name="api-newsletter"),
 ]

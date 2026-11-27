@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
+from rest_framework.test import APIClient
 
 from orders.models import NewsletterSubscriber, Order, OrderStatus, PromoCode
 from products.models import Product, ProductSizeStock
@@ -27,12 +28,16 @@ class OrdersAndStorefrontApiTests(TestCase):
 
         promo_res = self.client.post(
             "/api/promos/validate/",
-            data={"code": "resha10", "subtotal": 200},
+            data={
+                "code": "resha10",
+                "items": [{"productId": "rsh-001", "size": "S", "quantity": 2}],
+            },
             content_type="application/json",
         )
         self.assertEqual(promo_res.status_code, 200)
         self.assertTrue(promo_res.json()["ok"])
-        self.assertEqual(promo_res.json()["discountAmount"], 20)
+        self.assertEqual(promo_res.json()["subtotal"], 232)
+        self.assertEqual(promo_res.json()["discountAmount"], 23)
 
     def test_checkout_order_creation_stock_deduction_and_lookup(self):
         amani = Product.objects.get(slug="amani-dress")
@@ -149,3 +154,225 @@ class OrdersAndStorefrontApiTests(TestCase):
         self.assertEqual(ship_res.status_code, 200)
         order.refresh_from_db()
         self.assertEqual(order.status, OrderStatus.SHIPPED)
+
+    def test_promo_validation_rejects_client_pricing_fields(self):
+        res = self.client.post(
+            "/api/promos/validate/",
+            data={
+                "code": "RESHA10",
+                "subtotal": 500,
+                "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+        res_price = self.client.post(
+            "/api/promos/validate/",
+            data={
+                "code": "RESHA10",
+                "items": [
+                    {
+                        "productId": "rsh-001",
+                        "size": "S",
+                        "quantity": 1,
+                        "price": 1,
+                    }
+                ],
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(res_price.status_code, 400)
+
+    def test_order_quote_calculates_server_authoritative_totals(self):
+        quote_res = self.client.post(
+            "/api/orders/quote/",
+            data={
+                "deliveryMethod": "standard",
+                "promoCode": "RESHA10",
+                "items": [
+                    {
+                        "productId": "rsh-001",
+                        "colorName": "Dusty Rose",
+                        "size": "S",
+                        "quantity": 1,
+                    },
+                    {
+                        "productId": "rsh-001",
+                        "colorName": "Dusty Rose",
+                        "size": "S",
+                        "quantity": 1,
+                    },
+                ],
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(quote_res.status_code, 200)
+        body = quote_res.json()
+        self.assertEqual(len(body["items"]), 1)
+        self.assertEqual(body["items"][0]["quantity"], 2)
+        self.assertEqual(body["items"][0]["unitPrice"], 116)
+        self.assertEqual(body["items"][0]["lineTotal"], 232)
+        self.assertEqual(body["subtotal"], 232)
+        self.assertEqual(body["discount"], 23)
+        self.assertEqual(body["shippingCost"], 0)
+        self.assertEqual(body["tax"], 16.72)
+        self.assertEqual(body["total"], 225.72)
+
+        tampered_quote = self.client.post(
+            "/api/orders/quote/",
+            data={
+                "deliveryMethod": "standard",
+                "shippingCost": 0,
+                "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(tampered_quote.status_code, 400)
+
+    def test_checkout_rejects_client_pricing_mismatch_and_split_stock_bypass(self):
+        base_payload = {
+            "email": "security@example.com",
+            "firstName": "Leela",
+            "lastName": "Sen",
+            "phone": "5551234567",
+            "address": "10 Main St",
+            "city": "Austin",
+            "postalCode": "78701",
+            "deliveryMethod": "standard",
+            "paymentMethod": "cod",
+            "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
+        }
+
+        for key, value in [
+            ("subtotal", 1),
+            ("discount", 100),
+            ("shippingCost", 0),
+            ("tax", 0),
+            ("total", 1),
+            ("status", "delivered"),
+            ("paymentStatus", "paid"),
+        ]:
+            bad_payload = {**base_payload, key: value}
+            res = self.client.post(
+                "/api/orders/",
+                data=bad_payload,
+                content_type="application/json",
+            )
+            self.assertEqual(res.status_code, 400, f"Expected 400 for {key}")
+
+        for item_key in ("price", "unitPrice", "unit_price", "lineTotal"):
+            bad_item_payload = {
+                **base_payload,
+                "items": [
+                    {
+                        "productId": "rsh-001",
+                        "size": "S",
+                        "quantity": 1,
+                        item_key: 1,
+                    }
+                ],
+            }
+            res = self.client.post(
+                "/api/orders/",
+                data=bad_item_payload,
+                content_type="application/json",
+            )
+            self.assertEqual(res.status_code, 400, f"Expected 400 for item {item_key}")
+
+        other_product = Product.objects.exclude(code="rsh-001").first()
+        mismatch_payload = {
+            **base_payload,
+            "items": [
+                {
+                    "productId": "rsh-001",
+                    "slug": other_product.slug,
+                    "size": "S",
+                    "quantity": 1,
+                }
+            ],
+        }
+        mismatch_res = self.client.post(
+            "/api/orders/",
+            data=mismatch_payload,
+            content_type="application/json",
+        )
+        self.assertEqual(mismatch_res.status_code, 400)
+
+        amani = Product.objects.get(code="rsh-001")
+        size_s = ProductSizeStock.objects.get(product=amani, size="S")
+        starting_stock = size_s.stock_count
+
+        split_stock_payload = {
+            **base_payload,
+            "items": [
+                {"productId": "rsh-001", "size": "S", "quantity": starting_stock - 1},
+                {"productId": "rsh-001", "size": "S", "quantity": 2},
+            ],
+        }
+        split_res = self.client.post(
+            "/api/orders/",
+            data=split_stock_payload,
+            content_type="application/json",
+        )
+        self.assertEqual(split_res.status_code, 400)
+
+        over_cap_payload = {
+            **base_payload,
+            "items": [
+                {"productId": "rsh-001", "size": "S", "quantity": 6},
+                {"productId": "rsh-001", "size": "S", "quantity": 5},
+            ],
+        }
+        cap_res = self.client.post(
+            "/api/orders/",
+            data=over_cap_payload,
+            content_type="application/json",
+        )
+        self.assertEqual(cap_res.status_code, 400)
+
+        size_s.refresh_from_db()
+        self.assertEqual(size_s.stock_count, starting_stock)
+
+    def test_public_post_endpoints_allow_session_cookie_without_csrf_token(self):
+        csrf_client = APIClient(enforce_csrf_checks=True)
+        csrf_client.force_login(self.staff_user)
+
+        promo_res = csrf_client.post(
+            "/api/promos/validate/",
+            data={
+                "code": "RESHA10",
+                "items": [{"productId": "rsh-001", "size": "S", "quantity": 2}],
+            },
+            format="json",
+        )
+        self.assertEqual(promo_res.status_code, 200)
+
+        quote_res = csrf_client.post(
+            "/api/orders/quote/",
+            data={
+                "deliveryMethod": "standard",
+                "promoCode": "RESHA10",
+                "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
+            },
+            format="json",
+        )
+        self.assertEqual(quote_res.status_code, 200)
+
+        order_res = csrf_client.post(
+            "/api/orders/",
+            data={
+                "email": "csrf@example.com",
+                "firstName": "Nadia",
+                "lastName": "Khan",
+                "phone": "5551112222",
+                "address": "20 Studio Row",
+                "city": "New York",
+                "postalCode": "10013",
+                "deliveryMethod": "standard",
+                "paymentMethod": "cod",
+                "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
+            },
+            format="json",
+        )
+        self.assertEqual(order_res.status_code, 201)
