@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
+  output: "standalone",
   images: {
     qualities: [75, 85, 90],
     dangerouslyAllowLocalIP: true,
