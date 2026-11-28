@@ -4,33 +4,6 @@
 {% block extrastyle %}
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'admin/css/dashboard.css' %}">
-<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
-<style>
-  @keyframes reshaNewOrderHighlight {
-    0% {
-      background-color: rgba(232, 180, 190, 0.58);
-    }
-    45% {
-      background-color: rgba(232, 180, 190, 0.34);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  .resha-table tbody tr.resha-new-order-row {
-    animation: reshaNewOrderHighlight 3.5s ease-out forwards;
-  }
-
-  .resha-table tbody tr.resha-new-order-row td:first-child {
-    box-shadow: inset 3px 0 0 var(--resha-rose, #9e5e6a);
-  }
-
-  .resha-status-refunded {
-    background: #f2f2f4;
-    color: #63636b;
-  }
-</style>
 {% endblock %}
 
 {% block coltype %}colM{% endblock %}
@@ -56,12 +29,15 @@
     </div>
 
     <div class="resha-hero-actions">
+      <a href="{% url 'admin:orders_order_changelist' %}?queue=needs_processing" id="resha-hero-process-btn" class="resha-btn resha-btn-alert"{% if not new_orders_to_process_count %} hidden{% endif %}>
+        Process New (<span id="resha-hero-process-count">{{ new_orders_to_process_count|default:0 }}</span>) →
+      </a>
       <a href="{% url 'admin:products_product_add' %}" class="resha-btn resha-btn-primary">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Add Garment
       </a>
       <a href="{% url 'admin:orders_order_changelist' %}" class="resha-btn resha-btn-secondary">
-        Orders ({{ resha_metrics.total_orders }})
+        Orders (<span id="resha-hero-orders-count">{{ resha_metrics.total_orders }}</span>)
       </a>
       <a href="{% url 'admin:orders_storeconfig_changelist' %}" class="resha-btn resha-btn-ghost">
         Store Settings
@@ -92,9 +68,9 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
         </span>
       </div>
-      <strong class="resha-kpi-value">{{ resha_metrics.total_orders }}</strong>
+      <strong class="resha-kpi-value" id="resha-kpi-total-orders">{{ resha_metrics.total_orders }}</strong>
       <div class="resha-kpi-foot">
-        <span class="resha-chip-warn">{{ resha_metrics.pending_orders }} awaiting dispatch</span>
+        <span class="resha-chip-warn" id="resha-kpi-pending-orders">{{ resha_metrics.pending_orders }} awaiting dispatch</span>
         <span>{{ resha_metrics.shipped_orders }} shipped</span>
       </div>
     </article>
@@ -228,7 +204,12 @@
           <span class="resha-eyebrow">Live Dispatch</span>
           <h2>Recent Orders</h2>
         </div>
-        <a href="{% url 'admin:orders_order_changelist' %}" class="resha-link">View All →</a>
+        <div class="resha-head-actions">
+          <a href="{% url 'admin:orders_order_changelist' %}?queue=needs_processing" id="resha-recent-orders-process-link" class="resha-queue-pill"{% if not new_orders_to_process_count %} hidden{% endif %}>
+            Process (<span id="resha-recent-orders-process-count">{{ new_orders_to_process_count|default:0 }}</span>) →
+          </a>
+          <a href="{% url 'admin:orders_order_changelist' %}" class="resha-link">View All →</a>
+        </div>
       </div>
 
       <div class="resha-table-wrap" id="recent-orders-table-wrap"{% if not recent_orders %} hidden{% endif %}>
@@ -252,7 +233,12 @@
                 <div class="resha-cell-strong">{{ order.shipping_name }}</div>
                 <div class="resha-cell-sub">{{ order.email }}</div>
               </td>
-              <td><span class="resha-status-pill resha-status-{{ order.status }}">{{ order.get_status_display }}</span></td>
+              <td>
+                <span class="resha-status-pill resha-status-{{ order.status }}">{{ order.get_status_display }}</span>
+                {% if order.status == "pending" or order.status == "confirmed" %}
+                  <div><a href="{% url 'admin:orders_order_change' order.pk %}" class="resha-inline-process-link">Process →</a></div>
+                {% endif %}
+              </td>
               <td class="resha-right resha-mono resha-cell-strong">Rs. {{ order.total }}</td>
             </tr>
             {% endfor %}
@@ -391,166 +377,6 @@
       {% endif %}
     </div>
   </section>
-
-  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
-  <script>
-  (function () {
-    "use strict";
-
-    var POLL_INTERVAL_MS = 15000;
-    var card = document.getElementById("resha-recent-orders-card");
-    var tbody = document.getElementById("recent-orders-tbody");
-    if (!card || !tbody) return;
-
-    var checkUrl = card.getAttribute("data-check-url");
-    if (!checkUrl) return;
-
-    var lastOrderId = parseInt(card.getAttribute("data-latest-order-id") || "0", 10) || 0;
-    var tableWrap = document.getElementById("recent-orders-table-wrap");
-    var emptyState = document.getElementById("recent-orders-empty");
-    var isChecking = false;
-
-    function buildOrderRow(order) {
-      var tr = document.createElement("tr");
-      tr.className = "resha-new-order-row";
-      tr.setAttribute("data-order-id", String(order.id));
-
-      var tdOrder = document.createElement("td");
-      var link = document.createElement("a");
-      var adminUrl =
-        typeof order.admin_url === "string" && order.admin_url.charAt(0) === "/"
-          ? order.admin_url
-          : "#";
-      link.setAttribute("href", adminUrl);
-      link.className = "resha-mono resha-order-link";
-      link.textContent = order.order_number || "#" + order.id;
-
-      var dateDiv = document.createElement("div");
-      dateDiv.className = "resha-cell-sub";
-      dateDiv.textContent = order.placed_at || "";
-
-      tdOrder.appendChild(link);
-      tdOrder.appendChild(dateDiv);
-
-      var tdClient = document.createElement("td");
-      var nameDiv = document.createElement("div");
-      nameDiv.className = "resha-cell-strong";
-      nameDiv.textContent = order.shipping_name || "";
-
-      var emailDiv = document.createElement("div");
-      emailDiv.className = "resha-cell-sub";
-      emailDiv.textContent = order.email || "";
-
-      tdClient.appendChild(nameDiv);
-      tdClient.appendChild(emailDiv);
-
-      var tdStatus = document.createElement("td");
-      var safeStatus = String(order.status || "pending")
-        .replace(/[^a-z0-9_-]/gi, "")
-        .toLowerCase();
-      var pill = document.createElement("span");
-      pill.className = "resha-status-pill resha-status-" + safeStatus;
-      pill.textContent = order.status_display || safeStatus;
-      tdStatus.appendChild(pill);
-
-      var tdTotal = document.createElement("td");
-      tdTotal.className = "resha-right resha-mono resha-cell-strong";
-      tdTotal.textContent = "Rs. " + (order.total != null ? order.total : "0.00");
-
-      tr.appendChild(tdOrder);
-      tr.appendChild(tdClient);
-      tr.appendChild(tdStatus);
-      tr.appendChild(tdTotal);
-      return tr;
-    }
-
-    function showNewOrdersToast(count, latestLabel) {
-      if (typeof Toastify !== "function") return;
-      Toastify({
-        text: "🛒 " + count + " New Order(s)! Latest: #" + latestLabel,
-        duration: 6000,
-        close: true,
-        gravity: "top",
-        position: "right",
-        style: {
-          background: "linear-gradient(135deg, #111114 0%, #7d4652 100%)",
-          color: "#ffffff",
-          borderRadius: "10px",
-          border: "1px solid rgba(232, 180, 190, 0.4)",
-          boxShadow: "0 10px 25px rgba(17, 17, 20, 0.22)",
-          fontSize: "13px",
-          fontWeight: "600",
-        },
-      }).showToast();
-    }
-
-    async function checkNewOrders() {
-      if (document.hidden || isChecking) return;
-      isChecking = true;
-
-      try {
-        var url = checkUrl + "?last_id=" + encodeURIComponent(String(lastOrderId));
-        var response = await fetch(url, {
-          method: "GET",
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-        });
-
-        if (!response.ok || response.redirected) return;
-        var contentType = response.headers.get("content-type") || "";
-        if (contentType.indexOf("application/json") === -1) return;
-
-        var data = await response.json();
-        if (!data || !data.has_new || !Array.isArray(data.orders) || data.orders.length === 0) {
-          return;
-        }
-
-        if (tableWrap && tableWrap.hidden) tableWrap.hidden = false;
-        if (emptyState && !emptyState.hidden) emptyState.hidden = true;
-
-        var insertedCount = 0;
-        var latestOrder = data.orders[data.orders.length - 1];
-
-        data.orders.forEach(function (order) {
-          if (!order) return;
-          var numericId = Number(order.id);
-          if (!Number.isInteger(numericId)) return;
-          if (!tbody.querySelector('tr[data-order-id="' + numericId + '"]')) {
-            tbody.prepend(buildOrderRow(order));
-            insertedCount += 1;
-          }
-        });
-
-        var numericLatestId = parseInt(String(data.latest_id), 10);
-        if (!isNaN(numericLatestId) && numericLatestId > lastOrderId) {
-          lastOrderId = numericLatestId;
-          card.setAttribute("data-latest-order-id", String(lastOrderId));
-        }
-
-        if (insertedCount > 0) {
-          var latestLabel =
-            (latestOrder && latestOrder.order_number) || String(lastOrderId);
-          showNewOrdersToast(data.count || insertedCount, latestLabel);
-        }
-      } catch (err) {
-        // Ignore transient network failures during background dashboard polling
-      } finally {
-        isChecking = false;
-      }
-    }
-
-    setInterval(function () {
-      if (document.hidden) return;
-      checkNewOrders();
-    }, POLL_INTERVAL_MS);
-
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) {
-        checkNewOrders();
-      }
-    });
-  })();
-  </script>
   {% endif %}
 
   <!-- Modern Workspace Directory Cards -->

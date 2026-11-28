@@ -395,7 +395,12 @@ class OrdersAndStorefrontApiTests(TestCase):
         self.assertEqual(non_staff_res.status_code, 302)
         self.assertIn("/admin/login/", non_staff_res["Location"])
 
-        # Staff user sees latest_order_id and Toastify/smart-polling assets on dashboard
+        # Unauthenticated login page should not expose polling/alerts markup
+        login_html = self.client.get(reverse("admin:login")).content.decode("utf-8")
+        self.assertNotIn("resha-header-orders-pill", login_html)
+        self.assertNotIn("toastify-js", login_html)
+
+        # Staff user sees latest_order_id, header badge, and Toastify/smart-polling assets
         self.client.force_login(self.staff_user)
         baseline_order = Order.objects.create(
             email="baseline@example.com",
@@ -407,11 +412,24 @@ class OrdersAndStorefrontApiTests(TestCase):
         dash_res = self.client.get(reverse("admin:index"))
         self.assertEqual(dash_res.status_code, 200)
         self.assertEqual(dash_res.context["latest_order_id"], baseline_order.id)
+        self.assertEqual(dash_res.context["new_orders_to_process_count"], 1)
         html = dash_res.content.decode("utf-8")
         self.assertIn(f'data-latest-order-id="{baseline_order.id}"', html)
         self.assertIn('data-check-url="/api/check-new-orders/"', html)
+        self.assertIn('id="resha-header-orders-pill"', html)
+        self.assertIn('id="resha-header-orders-count">1<', html)
+        self.assertIn('?queue=needs_processing', html)
         self.assertIn("toastify-js", html)
         self.assertIn("visibilitychange", html)
+
+        # Sub-pages in admin also get live header notification badge & filter works
+        changelist_res = self.client.get(
+            f"{reverse('admin:orders_order_changelist')}?queue=needs_processing"
+        )
+        self.assertEqual(changelist_res.status_code, 200)
+        changelist_html = changelist_res.content.decode("utf-8")
+        self.assertIn('id="resha-header-orders-pill"', changelist_html)
+        self.assertIn(baseline_order.order_number, changelist_html)
 
         # Validation on invalid last_id
         self.assertEqual(
@@ -448,6 +466,8 @@ class OrdersAndStorefrontApiTests(TestCase):
         first_data = first_poll.json()
         self.assertTrue(first_data["has_new"])
         self.assertEqual(first_data["count"], 10)
+        self.assertEqual(first_data["pending_process_count"], 13)
+        self.assertEqual(first_data["awaiting_dispatch_count"], 13)
         self.assertEqual(first_data["latest_id"], created_orders[9].id)
         self.assertEqual(
             [row["id"] for row in first_data["orders"]],
@@ -481,3 +501,12 @@ class OrdersAndStorefrontApiTests(TestCase):
         )
         self.assertEqual(third_poll.status_code, 200)
         self.assertEqual(third_poll.json(), {"has_new": False})
+
+        # Processing an order removes it from the needs-processing header count & queue
+        Order.objects.filter(pk=baseline_order.pk).update(status=OrderStatus.SHIPPED)
+        after_ship_dash = self.client.get(reverse("admin:index"))
+        self.assertEqual(after_ship_dash.context["new_orders_to_process_count"], 12)
+        queue_after_ship = self.client.get(
+            f"{reverse('admin:orders_order_changelist')}?queue=needs_processing"
+        ).content.decode("utf-8")
+        self.assertNotIn(baseline_order.order_number, queue_after_ship)

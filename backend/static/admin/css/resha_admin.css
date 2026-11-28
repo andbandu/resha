@@ -1746,6 +1746,207 @@ body.resha-login-body #content {
   }
 }
 
+/* ==========================================================================
+   Live Order Notification Header Pill, Queue Actions & Highlight Animation
+   ========================================================================== */
+
+#header #user-tools .resha-header-orders-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 11px 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--resha-border-strong) !important;
+  border-bottom: 1px solid var(--resha-border-strong) !important;
+  background: var(--resha-surface-subtle) !important;
+  color: var(--resha-ink) !important;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none !important;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+#header #user-tools .resha-header-orders-pill:hover {
+  border-color: var(--resha-rose) !important;
+  color: var(--resha-rose-deep) !important;
+}
+
+#header #user-tools .resha-header-orders-pill.is-has-new {
+  background: linear-gradient(135deg, #fff5f6 0%, #fce8ec 100%) !important;
+  border-color: #c97a89 !important;
+  color: #7d2f3f !important;
+  box-shadow: 0 2px 10px rgba(158, 94, 106, 0.16);
+}
+
+html[data-theme="dark"] #header #user-tools .resha-header-orders-pill.is-has-new {
+  background: linear-gradient(135deg, #2d1b20 0%, #3a2028 100%) !important;
+  border-color: #d99aa6 !important;
+  color: #f8dce2 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) #header #user-tools .resha-header-orders-pill.is-has-new {
+    background: linear-gradient(135deg, #2d1b20 0%, #3a2028 100%) !important;
+    border-color: #d99aa6 !important;
+    color: #f8dce2 !important;
+  }
+}
+
+.resha-orders-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resha-orders-dot {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #d92d4b;
+  box-shadow: 0 0 0 2px var(--header-bg);
+}
+
+.resha-header-orders-pill.is-has-new .resha-orders-dot {
+  display: block;
+  animation: reshaOrderBellPulse 1.8s infinite;
+}
+
+.resha-orders-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--resha-border);
+  color: var(--resha-ink);
+  font-family: var(--font-family-monospace);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.resha-header-orders-pill.is-has-new .resha-orders-badge {
+  background: #9e3d52;
+  color: #ffffff;
+}
+
+.resha-header-orders-pill.is-just-arrived .resha-orders-badge {
+  animation: reshaOrderBadgePop 0.55s ease;
+}
+
+@keyframes reshaOrderBellPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.72;
+  }
+}
+
+@keyframes reshaOrderBadgePop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.32);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes reshaNewOrderHighlight {
+  0% {
+    background-color: rgba(232, 180, 190, 0.58);
+  }
+  45% {
+    background-color: rgba(232, 180, 190, 0.34);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.resha-table tbody tr.resha-new-order-row {
+  animation: reshaNewOrderHighlight 3.5s ease-out forwards;
+}
+
+.resha-table tbody tr.resha-new-order-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--resha-rose, #9e5e6a);
+}
+
+.resha-status-refunded {
+  background: #f2f2f4;
+  color: #63636b;
+}
+
+.resha-btn-alert {
+  background: #9e3d52;
+  color: #ffffff !important;
+  border: 1px solid #9e3d52;
+}
+
+.resha-btn-alert:hover {
+  background: #7d2f3f;
+  border-color: #7d2f3f;
+}
+
+.resha-btn-alert[hidden],
+.resha-queue-pill[hidden] {
+  display: none !important;
+}
+
+.resha-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.resha-queue-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fce8ec;
+  color: #7d2f3f !important;
+  border: 1px solid #d99aa6;
+  text-decoration: none !important;
+}
+
+.resha-queue-pill:hover {
+  background: #9e3d52;
+  border-color: #9e3d52;
+  color: #ffffff !important;
+}
+
+.resha-inline-process-link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--resha-rose-deep) !important;
+  text-decoration: none !important;
+}
+
+.resha-inline-process-link:hover {
+  text-decoration: underline !important;
+}
+
 @media (max-width: 767px) {
   #header {
     padding: 12px 16px !important;
@@ -1763,5 +1964,9 @@ body.resha-login-body #content {
   .resha-top-pill,
   .resha-user-meta a {
     display: none !important;
+  }
+
+  #header #user-tools .resha-header-orders-pill {
+    display: inline-flex !important;
   }
 }

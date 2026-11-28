@@ -3,6 +3,13 @@
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | RESHA Atelier Admin{% endblock %}
 
+{% block extrastyle %}
+{{ block.super }}
+{% if has_permission and not is_popup %}
+<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+{% endif %}
+{% endblock %}
+
 {% block responsive %}
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'admin/css/resha_admin.css' %}">
@@ -28,6 +35,26 @@
 {% block usertools %}
 {% if has_permission %}
 <div id="user-tools" class="resha-user-tools">
+  <a
+    href="{% if new_orders_to_process_count %}{% url 'admin:orders_order_changelist' %}?queue=needs_processing{% else %}{% url 'admin:orders_order_changelist' %}{% endif %}"
+    id="resha-header-orders-pill"
+    class="resha-header-orders-pill{% if new_orders_to_process_count %} is-has-new{% endif %}"
+    data-check-url="{% url 'api-check-new-orders' %}"
+    data-latest-order-id="{{ latest_order_id|default:0 }}"
+    data-queue-url="{% url 'admin:orders_order_changelist' %}?queue=needs_processing"
+    data-all-orders-url="{% url 'admin:orders_order_changelist' %}"
+    title="{% if new_orders_to_process_count %}{{ new_orders_to_process_count }} order(s) waiting to be processed — click to open queue{% else %}View all customer orders{% endif %}"
+  >
+    <span class="resha-orders-bell" aria-hidden="true">
+      <span class="resha-orders-dot"></span>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </svg>
+    </span>
+    <span class="resha-orders-pill-label" id="resha-header-orders-label">{% if new_orders_to_process_count %}New Orders{% else %}Orders{% endif %}</span>
+    <span class="resha-orders-badge" id="resha-header-orders-count">{{ new_orders_to_process_count|default:0 }}</span>
+  </a>
   {% if site_url %}
     <a href="{{ site_url }}" target="_blank" rel="noopener" class="resha-top-pill resha-top-store">
       <span>Storefront</span>
@@ -57,3 +84,301 @@
 {% endblock %}
 
 {% block nav-global %}{% endblock %}
+
+{% block extrabody %}
+{{ block.super }}
+{% if has_permission and not is_popup %}
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var POLL_INTERVAL_MS = 15000;
+  var headerPill = document.getElementById("resha-header-orders-pill");
+  if (!headerPill) return;
+
+  var checkUrl = headerPill.getAttribute("data-check-url");
+  if (!checkUrl) return;
+
+  var dashCard = document.getElementById("resha-recent-orders-card");
+  var lastOrderId =
+    parseInt(
+      (dashCard && dashCard.getAttribute("data-latest-order-id")) ||
+        headerPill.getAttribute("data-latest-order-id") ||
+        "0",
+      10
+    ) || 0;
+
+  var headerLabelEl = document.getElementById("resha-header-orders-label");
+  var headerCountEl = document.getElementById("resha-header-orders-count");
+  var queueUrl = headerPill.getAttribute("data-queue-url") || "#";
+  var allOrdersUrl = headerPill.getAttribute("data-all-orders-url") || "#";
+
+  var tbody = document.getElementById("recent-orders-tbody");
+  var tableWrap = document.getElementById("recent-orders-table-wrap");
+  var emptyState = document.getElementById("recent-orders-empty");
+  var heroCountEl = document.getElementById("resha-hero-orders-count");
+  var heroProcessBtn = document.getElementById("resha-hero-process-btn");
+  var heroProcessCountEl = document.getElementById("resha-hero-process-count");
+  var dashProcessLink = document.getElementById("resha-recent-orders-process-link");
+  var dashProcessCountEl = document.getElementById("resha-recent-orders-process-count");
+  var kpiTotalEl = document.getElementById("resha-kpi-total-orders");
+  var kpiPendingEl = document.getElementById("resha-kpi-pending-orders");
+
+  var baseTitle = document.title.replace(/^\(\d+\s+New\)\s+/, "");
+  var isChecking = false;
+
+  function syncTitle(count) {
+    if (count > 0) {
+      document.title = "(" + count + " New) " + baseTitle;
+    } else {
+      document.title = baseTitle;
+    }
+  }
+
+  function applyPendingProcessUI(count, awaitingDispatchCount, animatePop) {
+    if (headerCountEl) {
+      headerCountEl.textContent = String(count);
+    }
+    if (headerLabelEl) {
+      headerLabelEl.textContent = count > 0 ? "New Orders" : "Orders";
+    }
+    if (count > 0) {
+      headerPill.classList.add("is-has-new");
+      if (queueUrl.charAt(0) === "/") {
+        headerPill.setAttribute("href", queueUrl);
+      }
+      headerPill.setAttribute(
+        "title",
+        count + " new order(s) waiting to be processed — click to open queue"
+      );
+    } else {
+      headerPill.classList.remove("is-has-new");
+      if (allOrdersUrl.charAt(0) === "/") {
+        headerPill.setAttribute("href", allOrdersUrl);
+      }
+      headerPill.setAttribute("title", "View all customer orders");
+    }
+
+    if (animatePop) {
+      headerPill.classList.remove("is-just-arrived");
+      void headerPill.offsetWidth;
+      headerPill.classList.add("is-just-arrived");
+    }
+
+    if (heroProcessBtn) {
+      heroProcessBtn.hidden = count <= 0;
+    }
+    if (heroProcessCountEl) {
+      heroProcessCountEl.textContent = String(count);
+    }
+    if (dashProcessLink) {
+      dashProcessLink.hidden = count <= 0;
+    }
+    if (dashProcessCountEl) {
+      dashProcessCountEl.textContent = String(count);
+    }
+    if (
+      kpiPendingEl &&
+      typeof awaitingDispatchCount === "number" &&
+      !isNaN(awaitingDispatchCount)
+    ) {
+      kpiPendingEl.textContent = String(awaitingDispatchCount) + " awaiting dispatch";
+    }
+
+    syncTitle(count);
+  }
+
+  var initialCount =
+    parseInt((headerCountEl && headerCountEl.textContent) || "0", 10) || 0;
+  syncTitle(initialCount);
+
+  function buildOrderRow(order) {
+    var tr = document.createElement("tr");
+    tr.className = "resha-new-order-row";
+    tr.setAttribute("data-order-id", String(order.id));
+
+    var adminUrl =
+      typeof order.admin_url === "string" && order.admin_url.charAt(0) === "/"
+        ? order.admin_url
+        : "#";
+
+    var tdOrder = document.createElement("td");
+    var link = document.createElement("a");
+    link.setAttribute("href", adminUrl);
+    link.className = "resha-mono resha-order-link";
+    link.textContent = order.order_number || "#" + order.id;
+
+    var dateDiv = document.createElement("div");
+    dateDiv.className = "resha-cell-sub";
+    dateDiv.textContent = order.placed_at || "";
+
+    tdOrder.appendChild(link);
+    tdOrder.appendChild(dateDiv);
+
+    var tdClient = document.createElement("td");
+    var nameDiv = document.createElement("div");
+    nameDiv.className = "resha-cell-strong";
+    nameDiv.textContent = order.shipping_name || "";
+
+    var emailDiv = document.createElement("div");
+    emailDiv.className = "resha-cell-sub";
+    emailDiv.textContent = order.email || "";
+
+    tdClient.appendChild(nameDiv);
+    tdClient.appendChild(emailDiv);
+
+    var tdStatus = document.createElement("td");
+    var safeStatus = String(order.status || "pending")
+      .replace(/[^a-z0-9_-]/gi, "")
+      .toLowerCase();
+    var pill = document.createElement("span");
+    pill.className = "resha-status-pill resha-status-" + safeStatus;
+    pill.textContent = order.status_display || safeStatus;
+    tdStatus.appendChild(pill);
+
+    if (safeStatus === "pending" || safeStatus === "confirmed") {
+      var processDiv = document.createElement("div");
+      var processLink = document.createElement("a");
+      processLink.setAttribute("href", adminUrl);
+      processLink.className = "resha-inline-process-link";
+      processLink.textContent = "Process →";
+      processDiv.appendChild(processLink);
+      tdStatus.appendChild(processDiv);
+    }
+
+    var tdTotal = document.createElement("td");
+    tdTotal.className = "resha-right resha-mono resha-cell-strong";
+    tdTotal.textContent = "Rs. " + (order.total != null ? order.total : "0.00");
+
+    tr.appendChild(tdOrder);
+    tr.appendChild(tdClient);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdTotal);
+    return tr;
+  }
+
+  function incrementCounter(el, delta) {
+    if (!el || delta <= 0) return;
+    var curr = parseInt((el.textContent || "").trim(), 10);
+    if (!isNaN(curr)) {
+      el.textContent = String(curr + delta);
+    }
+  }
+
+  function showNewOrdersToast(count, latestOrder, latestIdFallback) {
+    if (typeof Toastify !== "function") return;
+    var latestLabel =
+      (latestOrder && latestOrder.order_number) || String(latestIdFallback);
+    var destination =
+      count === 1 &&
+      latestOrder &&
+      typeof latestOrder.admin_url === "string" &&
+      latestOrder.admin_url.charAt(0) === "/"
+        ? latestOrder.admin_url
+        : queueUrl;
+
+    Toastify({
+      text: "🛒 " + count + " New Order(s)! Latest: #" + latestLabel + " · Click to process",
+      duration: 7000,
+      close: true,
+      gravity: "top",
+      position: "right",
+      stopOnFocus: true,
+      onClick: function () {
+        if (destination && destination.charAt(0) === "/") {
+          window.location.href = destination;
+        }
+      },
+      style: {
+        background: "linear-gradient(135deg, #111114 0%, #7d4652 100%)",
+        color: "#ffffff",
+        borderRadius: "10px",
+        border: "1px solid rgba(232, 180, 190, 0.45)",
+        boxShadow: "0 12px 28px rgba(17, 17, 20, 0.25)",
+        fontSize: "13px",
+        fontWeight: "600",
+        cursor: "pointer",
+      },
+    }).showToast();
+  }
+
+  async function checkNewOrders() {
+    if (document.hidden || isChecking) return;
+    isChecking = true;
+
+    try {
+      var url = checkUrl + "?last_id=" + encodeURIComponent(String(lastOrderId));
+      var response = await fetch(url, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+
+      if (!response.ok || response.redirected) return;
+      var contentType = response.headers.get("content-type") || "";
+      if (contentType.indexOf("application/json") === -1) return;
+
+      var data = await response.json();
+      if (!data || !data.has_new || !Array.isArray(data.orders) || data.orders.length === 0) {
+        return;
+      }
+
+      var newCount = Number(data.count) || data.orders.length;
+      var latestOrder = data.orders[data.orders.length - 1];
+
+      if (tbody) {
+        if (tableWrap && tableWrap.hidden) tableWrap.hidden = false;
+        if (emptyState && !emptyState.hidden) emptyState.hidden = true;
+
+        data.orders.forEach(function (order) {
+          if (!order) return;
+          var numericId = Number(order.id);
+          if (!Number.isInteger(numericId)) return;
+          if (!tbody.querySelector('tr[data-order-id="' + numericId + '"]')) {
+            tbody.prepend(buildOrderRow(order));
+          }
+        });
+      }
+
+      var numericLatestId = parseInt(String(data.latest_id), 10);
+      if (!isNaN(numericLatestId) && numericLatestId > lastOrderId) {
+        lastOrderId = numericLatestId;
+        headerPill.setAttribute("data-latest-order-id", String(lastOrderId));
+        if (dashCard) {
+          dashCard.setAttribute("data-latest-order-id", String(lastOrderId));
+        }
+      }
+
+      incrementCounter(heroCountEl, newCount);
+      incrementCounter(kpiTotalEl, newCount);
+
+      var nextPendingCount =
+        typeof data.pending_process_count === "number"
+          ? data.pending_process_count
+          : (parseInt((headerCountEl && headerCountEl.textContent) || "0", 10) || 0) +
+            newCount;
+
+      applyPendingProcessUI(nextPendingCount, data.awaiting_dispatch_count, true);
+      showNewOrdersToast(newCount, latestOrder, lastOrderId);
+    } catch (err) {
+      // Ignore transient network failures during background admin polling
+    } finally {
+      isChecking = false;
+    }
+  }
+
+  setInterval(function () {
+    if (document.hidden) return;
+    checkNewOrders();
+  }, POLL_INTERVAL_MS);
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) {
+      checkNewOrders();
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

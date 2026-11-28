@@ -72,9 +72,12 @@ class ReshaAdminSite(admin.AdminSite):
             ]
         ]
 
-        pending_orders = (
+        new_orders_to_process_count = (
             status_counts_raw.get(OrderStatus.PENDING, 0)
             + status_counts_raw.get(OrderStatus.CONFIRMED, 0)
+        )
+        pending_orders = (
+            new_orders_to_process_count
             + status_counts_raw.get(OrderStatus.PROCESSING, 0)
         )
         shipped_orders = status_counts_raw.get(OrderStatus.SHIPPED, 0)
@@ -195,6 +198,7 @@ class ReshaAdminSite(admin.AdminSite):
                 "avg_order_value": avg_order_value,
                 "avg_order_value_display": format_lkr(avg_order_value, force_decimals=True),
                 "total_orders": total_orders,
+                "new_orders_to_process_count": new_orders_to_process_count,
                 "pending_orders": pending_orders,
                 "shipped_orders": shipped_orders,
                 "total_products": total_products,
@@ -217,6 +221,7 @@ class ReshaAdminSite(admin.AdminSite):
             "low_stock_items": low_stock_items,
             "recent_orders": recent_orders,
             "latest_order_id": latest_order_id,
+            "new_orders_to_process_count": new_orders_to_process_count,
             "category_stats": category_stats,
             "fabric_breakdown": fabric_breakdown,
             "collection_stats": collection_stats,

@@ -166,6 +166,38 @@ PAYMENT_STATUS_COLORS = {
 }
 
 
+class ProcessingQueueFilter(admin.SimpleListFilter):
+    title = "processing queue"
+    parameter_name = "queue"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("needs_processing", "Needs Processing (Pending & Confirmed)"),
+            ("awaiting_dispatch", "Awaiting Dispatch (Pending, Confirmed & Processing)"),
+            ("completed", "Shipped & Delivered"),
+        )
+
+    def queryset(self, request, queryset):
+        val = self.value()
+        if val == "needs_processing":
+            return queryset.filter(
+                status__in=[OrderStatus.PENDING, OrderStatus.CONFIRMED]
+            )
+        if val == "awaiting_dispatch":
+            return queryset.filter(
+                status__in=[
+                    OrderStatus.PENDING,
+                    OrderStatus.CONFIRMED,
+                    OrderStatus.PROCESSING,
+                ]
+            )
+        if val == "completed":
+            return queryset.filter(
+                status__in=[OrderStatus.SHIPPED, OrderStatus.DELIVERED]
+            )
+        return queryset
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = (
@@ -180,7 +212,15 @@ class OrderAdmin(admin.ModelAdmin):
         "delivery_method",
         "tracking_number",
     )
-    list_filter = ("status", "payment_status", "payment_method", "delivery_method", "gift_wrap", "placed_at")
+    list_filter = (
+        ProcessingQueueFilter,
+        "status",
+        "payment_status",
+        "payment_method",
+        "delivery_method",
+        "gift_wrap",
+        "placed_at",
+    )
     search_fields = ("order_number", "email", "shipping_name", "phone", "tracking_number", "city")
     readonly_fields = ("order_number", "placed_at", "updated_at")
     inlines = [OrderItemInline]

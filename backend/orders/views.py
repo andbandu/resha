@@ -393,6 +393,17 @@ def check_new_orders(request):
         return JsonResponse({"has_new": False})
 
     latest_id = new_orders[-1].id
+    pending_process_count = Order.objects.filter(
+        status__in=[OrderStatus.PENDING, OrderStatus.CONFIRMED]
+    ).count()
+    awaiting_dispatch_count = Order.objects.filter(
+        status__in=[
+            OrderStatus.PENDING,
+            OrderStatus.CONFIRMED,
+            OrderStatus.PROCESSING,
+        ]
+    ).count()
+
     orders_payload = []
     for order in new_orders:
         placed_at = (
@@ -419,6 +430,8 @@ def check_new_orders(request):
             "has_new": True,
             "latest_id": latest_id,
             "count": len(new_orders),
+            "pending_process_count": pending_process_count,
+            "awaiting_dispatch_count": awaiting_dispatch_count,
             "orders": orders_payload,
         }
     )
