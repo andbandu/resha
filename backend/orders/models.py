@@ -180,9 +180,10 @@ class Order(models.Model):
     address = models.CharField(max_length=255, blank=True)
     apartment = models.CharField(max_length=120, blank=True)
     city = models.CharField(max_length=100, blank=True)
-    state = models.CharField(max_length=100, blank=True)
+    district = models.CharField(max_length=100, blank=True, default="")
+    province = models.CharField(max_length=100, blank=True, default="")
     postal_code = models.CharField(max_length=32, blank=True)
-    country = models.CharField(max_length=80, default="United States")
+    country = models.CharField(max_length=80, default="Sri Lanka")
     shipping_address = models.TextField()
 
     delivery_method = models.CharField(

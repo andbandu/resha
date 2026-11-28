@@ -4,6 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { formatPrice, getS3ImageUrl } from "@/lib/catalog";
+import {
+  SRI_LANKA_PROVINCE_DISTRICTS,
+  SRI_LANKA_PROVINCES,
+  type SriLankaProvince,
+} from "@/lib/sriLankaLocations";
 import { ApiRequestError } from "@/services/http";
 import { createOrder, fetchOrderQuote } from "@/services/orders";
 import type { OrderQuoteResponse, OrderRecord } from "@/lib/types";
@@ -22,9 +27,9 @@ interface FormState {
   address: string;
   apartment: string;
   city: string;
-  state: string;
+  province: SriLankaProvince | "";
+  district: string;
   postalCode: string;
-  country: string;
   deliveryMethod: DeliveryMethod;
   giftWrap: boolean;
   giftNote: string;
@@ -44,9 +49,9 @@ const INITIAL_FORM: FormState = {
   address: "",
   apartment: "",
   city: "",
-  state: "",
+  province: "",
+  district: "",
   postalCode: "",
-  country: "United States",
   deliveryMethod: "standard",
   giftWrap: false,
   giftNote: "",
@@ -393,6 +398,10 @@ export default function CheckoutView() {
         availableStock: item.quantity,
       }));
 
+  const availableDistricts = form.province
+    ? SRI_LANKA_PROVINCE_DISTRICTS[form.province]
+    : [];
+
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (submitError) setSubmitError(null);
@@ -400,6 +409,24 @@ export default function CheckoutView() {
       setErrors((prev) => {
         const copy = { ...prev };
         delete copy[key];
+        return copy;
+      });
+    }
+  }
+
+  function handleProvinceChange(value: string) {
+    const nextProvince = (value as SriLankaProvince) || "";
+    setForm((prev) => ({
+      ...prev,
+      province: nextProvince,
+      district: "",
+    }));
+    if (submitError) setSubmitError(null);
+    if (errors.province || errors.district) {
+      setErrors((prev) => {
+        const copy = { ...prev };
+        delete copy.province;
+        delete copy.district;
         return copy;
       });
     }
@@ -417,10 +444,12 @@ export default function CheckoutView() {
       nextErrors.phone = "Enter a valid contact phone number.";
     }
     if (!form.address.trim()) nextErrors.address = "Street address is required.";
-    if (!form.city.trim()) nextErrors.city = "City is required.";
-    if (!form.postalCode.trim()) {
-      nextErrors.postalCode = "Postal / ZIP code is required.";
+    if (!form.province) {
+      nextErrors.province = "Select a province.";
+    } else if (!form.district) {
+      nextErrors.district = "Select a district.";
     }
+    if (!form.city.trim()) nextErrors.city = "City is required.";
 
     if (form.paymentMethod === "card") {
       if (!form.cardName.trim()) {
@@ -464,9 +493,9 @@ export default function CheckoutView() {
         address: form.address.trim(),
         apartment: form.apartment.trim(),
         city: form.city.trim(),
-        state: form.state.trim(),
+        district: form.district,
+        province: form.province,
         postalCode: form.postalCode.trim(),
-        country: form.country,
         deliveryMethod: form.deliveryMethod,
         giftWrap: form.giftWrap,
         giftNote: form.giftNote.trim(),
@@ -617,50 +646,24 @@ export default function CheckoutView() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="country"
-                  className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
-                >
-                  Country / Region
-                </label>
-                <select
-                  id="country"
-                  value={form.country}
-                  onChange={(e) => updateField("country", e.target.value)}
-                  className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
-                >
-                  <option value="United States">United States</option>
-                  <option value="India">India</option>
-                  <option value="United Kingdom">United Kingdom</option>
-                  <option value="Canada">Canada</option>
-                  <option value="France">France</option>
-                  <option value="Germany">Germany</option>
-                  <option value="Australia">Australia</option>
-                  <option value="Singapore">Singapore</option>
-                </select>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="phone"
-                  className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
-                >
-                  Phone (For Courier) *
-                </label>
-                <input
-                  id="phone"
-                  type="tel"
-                  value={form.phone}
-                  onChange={(e) => updateField("phone", e.target.value)}
-                  placeholder="+1 (555) 234-5678"
-                  className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
-                />
-                {errors.phone && (
-                  <p className="mt-1 text-xs text-[#9F2D2D]">{errors.phone}</p>
-                )}
-              </div>
+            <div>
+              <label
+                htmlFor="phone"
+                className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
+              >
+                Phone (For Courier) *
+              </label>
+              <input
+                id="phone"
+                type="tel"
+                value={form.phone}
+                onChange={(e) => updateField("phone", e.target.value)}
+                placeholder="+94 77 123 4567"
+                className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
+              />
+              {errors.phone && (
+                <p className="mt-1 text-xs text-[#9F2D2D]">{errors.phone}</p>
+              )}
             </div>
 
             <div>
@@ -675,7 +678,7 @@ export default function CheckoutView() {
                 type="text"
                 value={form.address}
                 onChange={(e) => updateField("address", e.target.value)}
-                placeholder="Street, building, or house number"
+                placeholder="House number, street name, or lane"
                 className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
               />
               {errors.address && (
@@ -699,19 +702,83 @@ export default function CheckoutView() {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="province"
+                  className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
+                >
+                  Province *
+                </label>
+                <select
+                  id="province"
+                  value={form.province}
+                  onChange={(e) => handleProvinceChange(e.target.value)}
+                  className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
+                >
+                  <option value="">Select province</option>
+                  {SRI_LANKA_PROVINCES.map((prov) => (
+                    <option key={prov} value={prov}>
+                      {prov}
+                    </option>
+                  ))}
+                </select>
+                {!form.province && (
+                  <p className="mt-1 text-[11px] text-[#63636B]">
+                    Select a province first to choose your district.
+                  </p>
+                )}
+                {errors.province && (
+                  <p className="mt-1 text-xs text-[#9F2D2D]">
+                    {errors.province}
+                  </p>
+                )}
+              </div>
+
+              {form.province && (
+                <div>
+                  <label
+                    htmlFor="district"
+                    className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
+                  >
+                    District *
+                  </label>
+                  <select
+                    id="district"
+                    value={form.district}
+                    onChange={(e) => updateField("district", e.target.value)}
+                    className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
+                  >
+                    <option value="">Select district</option>
+                    {availableDistricts.map((dist) => (
+                      <option key={dist} value={dist}>
+                        {dist}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.district && (
+                    <p className="mt-1 text-xs text-[#9F2D2D]">
+                      {errors.district}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label
                   htmlFor="city"
                   className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
                 >
-                  City *
+                  City / Town *
                 </label>
                 <input
                   id="city"
                   type="text"
                   value={form.city}
                   onChange={(e) => updateField("city", e.target.value)}
+                  placeholder="e.g. Colombo 03, Kandy, Galle"
                   className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
                 />
                 {errors.city && (
@@ -721,39 +788,19 @@ export default function CheckoutView() {
 
               <div>
                 <label
-                  htmlFor="state"
-                  className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
-                >
-                  State / Region
-                </label>
-                <input
-                  id="state"
-                  type="text"
-                  value={form.state}
-                  onChange={(e) => updateField("state", e.target.value)}
-                  className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label
                   htmlFor="postalCode"
                   className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-[#63636B]"
                 >
-                  Postal Code *
+                  Postal Code (Optional)
                 </label>
                 <input
                   id="postalCode"
                   type="text"
                   value={form.postalCode}
                   onChange={(e) => updateField("postalCode", e.target.value)}
+                  placeholder="e.g. 00300"
                   className="w-full border border-[#EEDDE2] bg-[#FAF5F6] px-3.5 py-2.5 font-mono text-sm text-[#0E0E10] focus:border-[#9E5E6A] focus:bg-[#FFFFFF] focus:outline-none"
                 />
-                {errors.postalCode && (
-                  <p className="mt-1 text-xs text-[#9F2D2D]">
-                    {errors.postalCode}
-                  </p>
-                )}
               </div>
             </div>
           </section>

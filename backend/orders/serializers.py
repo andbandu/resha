@@ -5,6 +5,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from products.models import SizeOption
+from .locations import SRI_LANKA_PROVINCE_DISTRICTS, SRI_LANKA_PROVINCES
 from .models import (
     DeliveryMethod,
     NewsletterSource,
@@ -267,9 +268,9 @@ class CheckoutCreateSerializer(RejectClientPricingMixin, serializers.Serializer)
     address = serializers.CharField(max_length=255)
     apartment = serializers.CharField(max_length=120, required=False, allow_blank=True, default="")
     city = serializers.CharField(max_length=100)
-    state = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
-    postalCode = serializers.CharField(max_length=32)
-    country = serializers.CharField(max_length=80, required=False, default="United States")
+    district = serializers.CharField(max_length=100)
+    province = serializers.ChoiceField(choices=[(p, p) for p in SRI_LANKA_PROVINCES])
+    postalCode = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
     deliveryMethod = serializers.ChoiceField(
         choices=DeliveryMethod.choices,
         default=DeliveryMethod.STANDARD,
@@ -282,6 +283,22 @@ class CheckoutCreateSerializer(RejectClientPricingMixin, serializers.Serializer)
     )
     promoCode = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")
     items = CheckoutItemInputSerializer(many=True, min_length=1)
+
+    def validate(self, attrs):
+        province = (attrs.get("province") or "").strip()
+        district = (attrs.get("district") or "").strip()
+        allowed_districts = SRI_LANKA_PROVINCE_DISTRICTS.get(province, ())
+        if district not in allowed_districts:
+            raise serializers.ValidationError(
+                {
+                    "district": (
+                        f"'{district}' is not a valid district for {province}."
+                    )
+                }
+            )
+        attrs["province"] = province
+        attrs["district"] = district
+        return attrs
 
 
 class NewsletterSubscribeSerializer(serializers.Serializer):

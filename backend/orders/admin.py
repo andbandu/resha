@@ -218,10 +218,21 @@ class OrderAdmin(admin.ModelAdmin):
         "payment_status",
         "payment_method",
         "delivery_method",
+        "province",
+        "district",
         "gift_wrap",
         "placed_at",
     )
-    search_fields = ("order_number", "email", "shipping_name", "phone", "tracking_number", "city")
+    search_fields = (
+        "order_number",
+        "email",
+        "shipping_name",
+        "phone",
+        "tracking_number",
+        "city",
+        "district",
+        "province",
+    )
     readonly_fields = ("order_number", "placed_at", "updated_at")
     inlines = [OrderItemInline]
     date_hierarchy = "placed_at"
@@ -255,7 +266,7 @@ class OrderAdmin(admin.ModelAdmin):
                     ("email", "phone"),
                     ("first_name", "last_name", "shipping_name"),
                     ("address", "apartment"),
-                    ("city", "state", "postal_code", "country"),
+                    ("city", "district", "province", "postal_code", "country"),
                     "shipping_address",
                 )
             },
@@ -361,6 +372,10 @@ class OrderAdmin(admin.ModelAdmin):
                 "Customer",
                 "Email",
                 "Phone",
+                "City",
+                "District",
+                "Province",
+                "Postal Code",
                 "Delivery Method",
                 "Promo Code",
                 "Subtotal",
@@ -382,6 +397,10 @@ class OrderAdmin(admin.ModelAdmin):
                     o.shipping_name,
                     o.email,
                     o.phone,
+                    o.city,
+                    o.district,
+                    o.province,
+                    o.postal_code,
                     o.delivery_method,
                     o.promo_code_label,
                     o.subtotal,

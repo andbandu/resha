@@ -200,9 +200,9 @@ export interface CheckoutOrderPayload {
   address: string;
   apartment: string;
   city: string;
-  state: string;
-  postalCode: string;
-  country: string;
+  district: string;
+  province: string;
+  postalCode?: string;
   deliveryMethod: "standard" | "express" | "studio";
   giftWrap: boolean;
   giftNote: string;

@@ -235,18 +235,19 @@ class OrderCreateView(APIView):
             pricing.promo.times_used = F("times_used") + 1
             pricing.promo.save(update_fields=["times_used"])
 
-        city_state_zip = (
-            f"{data['city'].strip()}"
-            f"{', ' + data['state'].strip() if data.get('state', '').strip() else ''}"
-            f" {data['postalCode'].strip()}"
-        )
+        district = data["district"].strip()
+        province = data["province"].strip()
+        postal_code = data.get("postalCode", "").strip()
+        city_part = f"{data['city'].strip()} {postal_code}".strip() if postal_code else data["city"].strip()
         full_address = ", ".join(
             part
             for part in [
                 data["address"].strip(),
                 data.get("apartment", "").strip(),
-                city_state_zip,
-                data.get("country", "United States").strip(),
+                city_part,
+                f"{district} District",
+                province,
+                "Sri Lanka",
             ]
             if part
         )
@@ -266,9 +267,10 @@ class OrderCreateView(APIView):
             address=data["address"].strip(),
             apartment=data.get("apartment", "").strip(),
             city=data["city"].strip(),
-            state=data.get("state", "").strip(),
-            postal_code=data["postalCode"].strip(),
-            country=data.get("country", "United States").strip(),
+            district=district,
+            province=province,
+            postal_code=postal_code,
+            country="Sri Lanka",
             shipping_address=full_address,
             delivery_method=delivery_method,
             shipping_method_label=dict(DeliveryMethod.choices)[delivery_method],

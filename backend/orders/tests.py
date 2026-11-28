@@ -49,13 +49,12 @@ class OrdersAndStorefrontApiTests(TestCase):
             "newsletter": True,
             "firstName": "Aanya",
             "lastName": "Mehta",
-            "phone": "+1 555 234 5678",
-            "address": "450 Mercer Street",
+            "phone": "+94 77 234 5678",
+            "address": "450 Galle Road",
             "apartment": "Apt 4B",
-            "city": "New York",
-            "state": "NY",
-            "postalCode": "10013",
-            "country": "United States",
+            "city": "Colombo 03",
+            "district": "Colombo",
+            "province": "Western Province",
             "deliveryMethod": "standard",
             "giftWrap": True,
             "giftNote": "Happy Anniversary",
@@ -85,6 +84,13 @@ class OrdersAndStorefrontApiTests(TestCase):
         self.assertEqual(order_data["total"], 225.72)
         self.assertEqual(order_data["status"], "confirmed")
         self.assertEqual(order_data["paymentStatus"], "paid")
+        self.assertIn("Colombo District, Western Province, Sri Lanka", order_data["shippingAddress"])
+
+        saved_order = Order.objects.get(order_number=order_data["orderNumber"])
+        self.assertEqual(saved_order.district, "Colombo")
+        self.assertEqual(saved_order.province, "Western Province")
+        self.assertEqual(saved_order.postal_code, "")
+        self.assertEqual(saved_order.country, "Sri Lanka")
 
         size_s.refresh_from_db()
         self.assertEqual(size_s.stock_count, starting_stock - 2)
@@ -108,16 +114,29 @@ class OrdersAndStorefrontApiTests(TestCase):
         self.assertEqual(lookup_ok.status_code, 200)
         self.assertEqual(lookup_ok.json()["orderNumber"], order_data["orderNumber"])
 
+        # Mismatched district/province and invalid province are rejected
+        bad_district = {**payload, "province": "Central Province", "district": "Colombo"}
+        self.assertEqual(
+            self.client.post("/api/orders/", data=bad_district, content_type="application/json").status_code,
+            400,
+        )
+        bad_province = {**payload, "province": "Invalid Province", "district": "Colombo"}
+        self.assertEqual(
+            self.client.post("/api/orders/", data=bad_province, content_type="application/json").status_code,
+            400,
+        )
+
     def test_checkout_rejects_out_of_stock_size(self):
         # amani-dress XS starts at stock 0
         payload = {
             "email": "client2@example.com",
             "firstName": "Maya",
             "lastName": "Rao",
-            "phone": "5551234567",
-            "address": "10 Main St",
-            "city": "Austin",
-            "postalCode": "78701",
+            "phone": "0771234567",
+            "address": "10 Peradeniya Rd",
+            "city": "Kandy",
+            "district": "Kandy",
+            "province": "Central Province",
             "deliveryMethod": "standard",
             "paymentMethod": "cod",
             "items": [{"slug": "amani-dress", "size": "XS", "quantity": 1}],
@@ -235,10 +254,12 @@ class OrdersAndStorefrontApiTests(TestCase):
             "email": "security@example.com",
             "firstName": "Leela",
             "lastName": "Sen",
-            "phone": "5551234567",
+            "phone": "0771234567",
             "address": "10 Main St",
-            "city": "Austin",
-            "postalCode": "78701",
+            "city": "Galle",
+            "district": "Galle",
+            "province": "Southern Province",
+            "postalCode": "80000",
             "deliveryMethod": "standard",
             "paymentMethod": "cod",
             "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
@@ -365,10 +386,11 @@ class OrdersAndStorefrontApiTests(TestCase):
                 "email": "csrf@example.com",
                 "firstName": "Nadia",
                 "lastName": "Khan",
-                "phone": "5551112222",
+                "phone": "0771112222",
                 "address": "20 Studio Row",
-                "city": "New York",
-                "postalCode": "10013",
+                "city": "Colombo 07",
+                "district": "Colombo",
+                "province": "Western Province",
                 "deliveryMethod": "standard",
                 "paymentMethod": "cod",
                 "items": [{"productId": "rsh-001", "size": "S", "quantity": 1}],
