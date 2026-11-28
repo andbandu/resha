@@ -1,31 +1,188 @@
-    # Resha Store — Complete Setup, Code & Deployment Guide
+# Resha — Full-Stack E-Commerce Platform
 
-Full technical documentation for the **Resha** Next.js e-commerce frontend, AWS S3 image hosting, AWS Lightsail Docker + Nginx server, and GitHub Actions CI/CD pipeline.
+![Next.js](https://img.shields.io/badge/Next.js-App_Router-black?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
+![Django](https://img.shields.io/badge/Django-5.2-092E20?logo=django)
+![DRF](https://img.shields.io/badge/Django_REST_Framework-API-red)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
+![AWS](https://img.shields.io/badge/AWS-Lightsail_%7C_S3-FF9900?logo=amazon-aws)
+
+**Resha** is a production-deployed, full-stack e-commerce storefront and order management platform. Built from the ground up with **Next.js**, **Django REST Framework**, and **PostgreSQL**, the application is containerized with **Docker** and deployed on **AWS Lightsail** behind an **Nginx** reverse proxy with automated **GitHub Actions** CI/CD.
 
 ---
 
-## 1. Repository Structure
+## System Architecture
+
+```text
+                        ┌─────────────────────────────────────────┐
+                        │        AWS Lightsail (Ubuntu VPS)       │
+                        │                                         │
+┌──────────────┐  HTTP  │  ┌───────────────────────────────────┐  │
+│              ├───────►│  │      Nginx Reverse Proxy (:80)    │  │
+│   Customer   │        │  └────────┬─────────────────┬────────┘  │
+│   Browser    │        │           │ /               │ /api/     │
+└──────────────┘        │           ▼                 │ /admin/   │
+                        │  ┌─────────────────┐        │ /static/  │
+                        │  │   Next.js App   │        ▼           │
+                        │  │  (:3000 SSR/UI) ├───────►┌─────────┐ │
+                        │  └─────────────────┘  JSON  │ Django  │ │
+                        │                      (Internal) + DRF   │ │
+                        │                             │ (:8000) │ │
+                        │                             └─┬────┬──┘ │
+                        │                               │    │    │
+                        │            ┌──────────────────┘    │    │
+                        │            ▼                       │    │
+                        │  ┌──────────────────┐              │    │
+                        │  │  PostgreSQL 16   │              │    │
+                        │  │  (Docker Volume) │              │    │
+                        │  └──────────────────┘              │    │
+                        └────────────────────────────────────┼────┘
+                                                             │
+                                                             ▼
+                                                    ┌─────────────────┐
+                                                    │     AWS S3      │
+                                                    │ (Product Media) │
+                                                    └─────────────────┘
+```
+---
+## Screenshots
+
+### Storefront & Checkout
+![Resha Storefront](docs/storefront-home.png)
+![Checkout Flow](docs/checkout-flow.png)
+
+### Django Admin Panel
+![Django Admin Dashboard](docs/django-admin.png)
+---
+
+## Key Engineering & Security Highlights
+
+* **Tamper-Proof Server-Side Checkout:** Frontend payloads transmit only product identifiers and quantities. All unit prices, order totals (`Decimal`), and stock deductions are calculated and validated exclusively on the backend inside atomic database transactions (`transaction.atomic` + `select_for_update`).
+* **Hybrid Server/Client Data Layer:** Next.js Server Components communicate directly with the Django API over Docker's internal network (`INTERNAL_API_URL`) with ISR revalidation, while client interactions route cleanly through Nginx.
+* **Containerized Multi-Service Orchestration:** Runs isolated `frontend`, `backend`, and `db` services via Docker Compose, utilizing PostgreSQL health checks (`pg_isready`) and binding container ports strictly to `127.0.0.1` so all external traffic passes through Nginx.
+* **Cloud Media Storage (AWS S3):** Product imagery is served via AWS S3 backed by a dedicated, least-privilege IAM user policy.
+* **Automated CI/CD Pipeline:** Pushing to `main` triggers a GitHub Actions workflow that connects via SSH, pulls verified changes, rebuilds Docker images, and prunes dangling layers automatically.
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | Next.js (App Router, Standalone Build), React, TypeScript, Tailwind CSS |
+| **Backend** | Python, Django 5.2, Django REST Framework, Gunicorn |
+| **Database** | PostgreSQL 16 |
+| **Infrastructure** | Docker, Docker Compose, Nginx, Ubuntu Linux (AWS Lightsail) |
+| **Cloud & CI/CD** | AWS S3, AWS IAM, GitHub Actions |
+
+---
+
+## Project Structure
 
 ```text
 resha/
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml          # GitHub Actions CI/CD workflow
+│       └── deploy.yml          # Automated SSH deployment pipeline
+├── backend/
+│   ├── config/                 # Django settings, root URLs, WSGI config
+│   ├── products/               # Product catalog models, serializers, API views
+│   ├── orders/                 # Checkout validation, atomic order processing
+│   ├── Dockerfile              # Production Gunicorn container build
+│   └── requirements.txt
 ├── frontend/
-│   ├── Dockerfile              # Multi-stage standalone Next.js build
-│   ├── .dockerignore           # Excludes node_modules, .next, .env.local
-│   ├── .env.local              # Local dev env vars (NOT committed to Git)
-│   ├── next.config.ts          # output: "standalone" + S3 remotePatterns
-│   ├── app/
-│   │   └── layout.tsx          # data-scroll-behavior="smooth"
-│   └── package.json
-├── docker-compose.yml          # Runs frontend (and future Django + PostgreSQL)
-├── .env                        # Created ONLY on Lightsail server (NOT in Git)
-├── .gitignore                  # Ignores .env, .env.local, node_modules, .next
-└── DEPLOYMENT.md               # This guide
+│   ├── app/                    # Next.js App Router pages & layouts
+│   ├── components/             # Reusable UI, layout, product, and cart components
+│   ├── lib/                    # Centralized fetch wrapper & formatting utilities
+│   ├── services/               # Typed API service modules
+│   ├── types/                  # TypeScript interfaces
+│   └── Dockerfile              # Multi-stage Next.js standalone build
+├── docker-compose.yml          # Multi-container orchestration & health checks
+├── .env.example                # Environment variable template
+└── README.md
 ```
 
 ---
+
+## Local Development Setup
+
+### Prerequisites
+* Docker & Docker Compose
+* Git
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/andbandu/resha.git
+cd resha
+```
+
+### 2. Configure Environment Variables
+Copy the example environment file and fill in your local values:
+```bash
+cp .env.example .env
+```
+
+Example `.env` structure:
+```env
+# Django
+DJANGO_SECRET_KEY=your-local-secret-key
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+FRONTEND_URL=http://localhost:3000
+
+# PostgreSQL
+POSTGRES_DB=resha_db
+POSTGRES_USER=resha_user
+POSTGRES_PASSWORD=your-local-db-password
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+
+# Next.js
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api
+INTERNAL_API_URL=http://backend:8000/api
+NEXT_PUBLIC_S3_BASE_URL=https://your-bucket.s3.amazonaws.com
+
+# AWS S3
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_STORAGE_BUCKET_NAME=your-bucket-name
+AWS_S3_REGION_NAME=ap-southeast-1
+```
+
+### 3. Build and Start Containers
+```bash
+docker compose up -d --build
+```
+
+### 4. Run Migrations & Create an Admin Account
+```bash
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py createsuperuser
+```
+
+* **Storefront:** `http://localhost:3000`
+* **Django Admin:** `http://localhost:8000/admin/`
+
+---
+
+## Production Deployment
+
+In production on **AWS Lightsail**, **Nginx** acts as the public-facing reverse proxy on ports `80`/`443`:
+* `/api/`, `/admin/`, and `/static/` proxy to the Django/Gunicorn container (`127.0.0.1:8000`).
+* `/` proxies to the Next.js standalone server (`127.0.0.1:3000`).
+
+Every push to `main` automatically deploys via `.github/workflows/deploy.yml`.
+
+---
+
+## Roadmap
+
+* [ ] Custom domain configuration with Let's Encrypt SSL/HTTPS
+* [ ] Payment gateway integration
+* [ ] Instant admin order notifications (Telegram Bot / Email webhooks)
+* [ ] Customer order tracking portal
+
 
 ## 2. AWS S3 Image Storage Setup
 
