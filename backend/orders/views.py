@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
 from django.db.models import F
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_GET
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -364,3 +368,57 @@ class NewsletterSubscribeView(APIView):
             },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+@staff_member_required
+@require_GET
+def check_new_orders(request):
+    """Low-load endpoint returning up to 10 new orders with id > last_id for admin polling."""
+    raw_last_id = (request.GET.get("last_id") or "0").strip()
+    try:
+        last_id = int(raw_last_id)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            {"error": "Invalid last_id query parameter."},
+            status=400,
+        )
+    if last_id < 0:
+        return JsonResponse(
+            {"error": "Invalid last_id query parameter."},
+            status=400,
+        )
+
+    new_orders = list(Order.objects.filter(id__gt=last_id).order_by("id")[:10])
+    if not new_orders:
+        return JsonResponse({"has_new": False})
+
+    latest_id = new_orders[-1].id
+    orders_payload = []
+    for order in new_orders:
+        placed_at = (
+            timezone.localtime(order.placed_at)
+            if timezone.is_aware(order.placed_at)
+            else order.placed_at
+        )
+        orders_payload.append(
+            {
+                "id": order.id,
+                "order_number": order.order_number,
+                "placed_at": placed_at.strftime("%b %d, %H:%M"),
+                "shipping_name": order.shipping_name,
+                "email": order.email,
+                "status": order.status,
+                "status_display": order.get_status_display(),
+                "total": f"{order.total:.2f}",
+                "admin_url": reverse("admin:orders_order_change", args=[order.pk]),
+            }
+        )
+
+    return JsonResponse(
+        {
+            "has_new": True,
+            "latest_id": latest_id,
+            "count": len(new_orders),
+            "orders": orders_payload,
+        }
+    )

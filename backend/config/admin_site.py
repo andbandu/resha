@@ -116,6 +116,9 @@ class ReshaAdminSite(admin.AdminSite):
         recent_orders = list(
             Order.objects.prefetch_related("items").order_by("-placed_at", "-id")[:7]
         )
+        latest_order_id = (
+            Order.objects.order_by("-id").values_list("id", flat=True).first() or 0
+        )
 
         categories_raw = list(
             Category.objects.annotate(
@@ -213,6 +216,7 @@ class ReshaAdminSite(admin.AdminSite):
             "order_pipeline": order_pipeline,
             "low_stock_items": low_stock_items,
             "recent_orders": recent_orders,
+            "latest_order_id": latest_order_id,
             "category_stats": category_stats,
             "fabric_breakdown": fabric_breakdown,
             "collection_stats": collection_stats,

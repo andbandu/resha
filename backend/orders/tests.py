@@ -376,3 +376,108 @@ class OrdersAndStorefrontApiTests(TestCase):
             format="json",
         )
         self.assertEqual(order_res.status_code, 201)
+
+    def test_dashboard_context_and_check_new_orders_smart_polling_endpoint(self):
+        User = get_user_model()
+        regular_user = User.objects.create_user(
+            username="regular_shopper",
+            email="shopper@resha.example",
+            password="ShopperPassword!123",
+        )
+
+        # Unauthenticated and non-staff requests are blocked by @staff_member_required
+        anon_res = self.client.get("/api/check-new-orders/?last_id=0")
+        self.assertEqual(anon_res.status_code, 302)
+        self.assertIn("/admin/login/", anon_res["Location"])
+
+        self.client.force_login(regular_user)
+        non_staff_res = self.client.get("/api/check-new-orders/?last_id=0")
+        self.assertEqual(non_staff_res.status_code, 302)
+        self.assertIn("/admin/login/", non_staff_res["Location"])
+
+        # Staff user sees latest_order_id and Toastify/smart-polling assets on dashboard
+        self.client.force_login(self.staff_user)
+        baseline_order = Order.objects.create(
+            email="baseline@example.com",
+            shipping_name="Baseline Client",
+            shipping_address="1 Atelier Row",
+            total=150,
+        )
+
+        dash_res = self.client.get(reverse("admin:index"))
+        self.assertEqual(dash_res.status_code, 200)
+        self.assertEqual(dash_res.context["latest_order_id"], baseline_order.id)
+        html = dash_res.content.decode("utf-8")
+        self.assertIn(f'data-latest-order-id="{baseline_order.id}"', html)
+        self.assertIn('data-check-url="/api/check-new-orders/"', html)
+        self.assertIn("toastify-js", html)
+        self.assertIn("visibilitychange", html)
+
+        # Validation on invalid last_id
+        self.assertEqual(
+            self.client.get("/api/check-new-orders/?last_id=invalid").status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.get("/api/check-new-orders/?last_id=-1").status_code,
+            400,
+        )
+
+        # When no newer orders exist
+        empty_res = self.client.get(
+            f"/api/check-new-orders/?last_id={baseline_order.id}"
+        )
+        self.assertEqual(empty_res.status_code, 200)
+        self.assertEqual(empty_res.json(), {"has_new": False})
+
+        # Create 12 new orders -> first poll caps at 10 ordered by ascending id
+        created_orders = [
+            Order.objects.create(
+                email=f"buyer{i}@example.com",
+                shipping_name=f"Buyer {i}",
+                shipping_address=f"{i} Mercer St",
+                total=100 + i,
+            )
+            for i in range(1, 13)
+        ]
+
+        first_poll = self.client.get(
+            f"/api/check-new-orders/?last_id={baseline_order.id}"
+        )
+        self.assertEqual(first_poll.status_code, 200)
+        first_data = first_poll.json()
+        self.assertTrue(first_data["has_new"])
+        self.assertEqual(first_data["count"], 10)
+        self.assertEqual(first_data["latest_id"], created_orders[9].id)
+        self.assertEqual(
+            [row["id"] for row in first_data["orders"]],
+            [o.id for o in created_orders[:10]],
+        )
+        sample = first_data["orders"][0]
+        self.assertEqual(sample["order_number"], created_orders[0].order_number)
+        self.assertEqual(sample["shipping_name"], "Buyer 1")
+        self.assertEqual(sample["email"], "buyer1@example.com")
+        self.assertEqual(sample["status"], "pending")
+        self.assertEqual(sample["status_display"], "Pending")
+        self.assertEqual(sample["total"], "101.00")
+        self.assertEqual(
+            sample["admin_url"],
+            reverse("admin:orders_order_change", args=[created_orders[0].pk]),
+        )
+        self.assertTrue(sample["placed_at"])
+
+        # Second poll picks up remaining 2 orders, third poll is empty
+        second_poll = self.client.get(
+            f"/api/check-new-orders/?last_id={first_data['latest_id']}"
+        )
+        self.assertEqual(second_poll.status_code, 200)
+        second_data = second_poll.json()
+        self.assertTrue(second_data["has_new"])
+        self.assertEqual(second_data["count"], 2)
+        self.assertEqual(second_data["latest_id"], created_orders[-1].id)
+
+        third_poll = self.client.get(
+            f"/api/check-new-orders/?last_id={second_data['latest_id']}"
+        )
+        self.assertEqual(third_poll.status_code, 200)
+        self.assertEqual(third_poll.json(), {"has_new": False})
